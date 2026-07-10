@@ -21,31 +21,12 @@ final class DemoNavigationController:
             RoutingOptionsView(coordinator: self)
         case .summary:
             SummaryView(coordinator: self)
-        }
-    }
-
-    func presentRoute(_ route: DemoPresentationRoute) {
-        switch route {
-        case .sheet:
-            let controller = IndependentFlowRootController(style: .sheet)
-            controller.modalPresentationStyle = .pageSheet
-            if let sheet = controller.sheetPresentationController {
-                sheet.detents = [.medium(), .large()]
-                sheet.prefersGrabberVisible = true
-                sheet.selectedDetentIdentifier = .medium
-            }
-            present(controller, animated: true)
-        case .overlay:
-            let controller = OverlayFlowContainerViewController(
-                rootController: IndependentFlowRootController(style: .overlay)
-            )
-            controller.modalPresentationStyle = .overFullScreen
-            controller.modalTransitionStyle = .crossDissolve
-            present(controller, animated: true)
-        case .fullScreen:
-            let controller = IndependentFlowRootController(style: .fullScreen)
-            controller.modalPresentationStyle = .fullScreen
-            present(controller, animated: true)
+        case .sheetFlow:
+            IndependentFlowRootController(style: .sheet)
+        case .overlayFlow:
+            IndependentFlowRootController(style: .overlay)
+        case .fullScreenFlow:
+            IndependentFlowRootController(style: .fullScreen)
         }
     }
 }
@@ -56,12 +37,9 @@ enum DemoDestination: Hashable {
     case nestedFlow
     case routingOptions
     case summary
-}
-
-enum DemoPresentationRoute: Hashable {
-    case sheet
-    case overlay
-    case fullScreen
+    case sheetFlow
+    case overlayFlow
+    case fullScreenFlow
 }
 
 private struct DemoHomeView: View, DestinationView {
@@ -86,13 +64,13 @@ private struct DemoHomeView: View, DestinationView {
                     coordinator.push(.routingOptions)
                 }
                 Button("Present sheet with separate tree") {
-                    coordinator.presentRoute(.sheet)
+                    coordinator.sheet(.sheetFlow)
                 }
                 Button("Present overlay with separate tree") {
-                    coordinator.presentRoute(.overlay)
+                    coordinator.overlay(.overlayFlow)
                 }
                 Button("Present full-screen separate flow") {
-                    coordinator.presentRoute(.fullScreen)
+                    coordinator.fullScreen(.fullScreenFlow)
                 }
             }
 
@@ -142,18 +120,18 @@ private struct RoutingOptionsView: View, DestinationView {
 
             Section("Independent presentation routes") {
                 Button("Sheet flow") {
-                    coordinator.presentRoute(.sheet)
+                    coordinator.sheet(.sheetFlow)
                 }
                 Button("Overlay flow") {
-                    coordinator.presentRoute(.overlay)
+                    coordinator.overlay(.overlayFlow)
                 }
                 Button("Full-screen flow") {
-                    coordinator.presentRoute(.fullScreen)
+                    coordinator.fullScreen(.fullScreenFlow)
                 }
             }
 
             Section("Boundary") {
-                Text("These modal routes are intentionally outside the parent stack. Each presentation installs a new NavigationRootController, so its typed stack is independent from the parent demo stack.")
+                Text("These modal routes are resolved through destinationView(for:) and presented outside the parent stack. Each presentation installs a new NavigationRootController, so its typed stack is independent from the parent demo stack.")
                     .foregroundStyle(.secondary)
             }
         }
@@ -549,63 +527,5 @@ private final class IndependentLegacyViewController: UIViewController {
             stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
         ])
-    }
-}
-
-@MainActor
-private final class OverlayFlowContainerViewController: UIViewController {
-    private let rootController: IndependentFlowRootController
-
-    init(rootController: IndependentFlowRootController) {
-        self.rootController = rootController
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = UIColor.black.withAlphaComponent(0.35)
-
-        let card = UIView()
-        card.backgroundColor = .systemBackground
-        card.layer.cornerRadius = 24
-        card.layer.cornerCurve = .continuous
-        card.clipsToBounds = true
-        card.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(card)
-
-        addChild(rootController)
-        rootController.view.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(rootController.view)
-        rootController.didMove(toParent: self)
-
-        NSLayoutConstraint.activate([
-            card.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            card.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
-            card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            card.heightAnchor.constraint(equalTo: view.safeAreaLayoutGuide.heightAnchor, multiplier: 0.72),
-
-            rootController.view.leadingAnchor.constraint(equalTo: card.leadingAnchor),
-            rootController.view.trailingAnchor.constraint(equalTo: card.trailingAnchor),
-            rootController.view.topAnchor.constraint(equalTo: card.topAnchor),
-            rootController.view.bottomAnchor.constraint(equalTo: card.bottomAnchor)
-        ])
-
-        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(closeIfBackgroundTapped(_:)))
-        tapGesture.cancelsTouchesInView = false
-        view.addGestureRecognizer(tapGesture)
-    }
-
-    @objc
-    private func closeIfBackgroundTapped(_ gesture: UITapGestureRecognizer) {
-        guard gesture.state == .ended else { return }
-        let point = gesture.location(in: view)
-        if rootController.view.superview?.frame.contains(point) == false {
-            dismiss(animated: true)
-        }
     }
 }
