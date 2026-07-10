@@ -1,6 +1,6 @@
 # SwiftUI + UIKit Navigation Coordinator Specification
 
-**Revision:** 2  
+**Revision:** 3
 **Implementation status:** Initial application slice implemented
 
 ## Revision Notes
@@ -23,10 +23,10 @@ This revision makes the runtime contract explicit:
   rules in section 10.
 - Public stack mutations are idempotent when the requested stack equals the current
   stack.
-- Modal, sheet, overlay, and full-screen presentation remain outside the core
-  stack runtime. When those surfaces need their own navigation, the demo presents
-  a separate `NavigationRootController` so the presented flow owns an independent
-  typed tree.
+- Sheet, overlay, and full-screen presentation use the same destination builder
+  path as push navigation. Coordinators expose presentation helpers that resolve
+  `destinationView(for:)` and present the resulting controller through the active
+  `UINavigationController`.
 
 ## 1. Purpose
 
@@ -39,12 +39,13 @@ The system should support:
 - SwiftUI screens hosted inside `UIHostingController`.
 - Existing UIKit `UIViewController` screens.
 - Nested feature flows represented by child `NavigationCoordinator`s.
+- Sheet, overlay, and full-screen presentation of typed destinations.
 - Declarative stack updates through arrays of `Hashable` destinations.
 - Diffed reconciliation between desired logical state and UIKit's physical navigation stack.
 - Predictable visual behavior for pushes, pops, replacements, and hierarchical substacks.
 - User-driven back navigation through UIKit back button and interactive swipe gesture.
 
-The system should not manage modal presentation, alerts, tabs, windows, deep-link routing, or app-level flow selection. Those should be handled independently and may use this navigation system internally when needed.
+The system should not manage alerts, tabs, windows, deep-link routing, app-level flow selection, or declarative modal state retention. Those should be handled independently and may use this navigation system internally when needed.
 
 ---
 
@@ -166,17 +167,16 @@ This system does not manage:
 
 - SwiftUI alerts.
 - SwiftUI confirmation dialogs.
-- Sheets.
-- Full-screen covers.
 - Custom windows.
 - Tab selection.
 - Deep-link parsing.
 - App-level flow routing.
 - Authentication root switching.
+- Declarative modal state restoration.
 
 These concerns may be built above or beside this system.
 
-If a modal flow needs stack navigation, it may instantiate its own `NavigationRootController` or equivalent root host.
+If a presented flow needs stack navigation, its destination may be a `NavigationRootController` or equivalent root host.
 
 Demo guidance:
 
@@ -186,8 +186,9 @@ Demo guidance:
 - Use a separate `NavigationRootController` when a sheet, overlay, full-screen
   presentation, tab, or app-level route owns a completely separate navigation
   tree.
-- Presentation routes should be modeled above the coordinator runtime. The
-  presented root may still use the same coordinator APIs internally.
+- Presentation routes should still be modeled as typed destinations. Calling
+  `sheet`, `overlay`, or `fullScreen` determines the presentation surface while
+  `destinationView(for:)` determines the presented controller.
 
 ---
 
@@ -370,6 +371,22 @@ open class NavigationRootController<Destination: Hashable>: UIViewController {
         }
 
         set(stack: Array(stack.dropLast()) + [destination])
+    }
+
+    public func sheet(_ destination: Destination) {
+        present(destination, style: .sheet)
+    }
+
+    public func overlay(_ destination: Destination) {
+        present(destination, style: .overlay)
+    }
+
+    public func fullScreen(_ destination: Destination) {
+        present(destination, style: .fullScreen)
+    }
+
+    public func present(_ destination: Destination, style: NavigationPresentationStyle) {
+        // Resolve destinationView(for:) and present through the active UINavigationController.
     }
 
     public func set(stack newStack: [Destination]) {
@@ -1201,10 +1218,10 @@ The first production slice should be implemented in this order:
 6. Expose `NavigationCoordinator` and `NavigationRootController` stack APIs.
 7. Add a demo containing SwiftUI destinations, a UIKit destination, duplicate
    routes, stack replacement, multi-route installation, and a nested child flow.
-8. Extend the demo with routing surfaces that are intentionally outside the
-   parent navigation tree: sheet, overlay, and full-screen presentation. Each
-   presented surface installs its own `NavigationRootController` to demonstrate
-   independent typed stacks.
+8. Extend the coordinator API and demo with sheet, overlay, and full-screen
+   presentation helpers that resolve typed destinations through
+   `destinationView(for:)`. Each presented independent flow installs its own
+   `NavigationRootController` to demonstrate independent typed stacks.
 9. Verify clean compilation and manually exercise back-button and interactive-pop
    behavior.
 
