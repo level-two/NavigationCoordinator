@@ -16,7 +16,7 @@ final class DemoNavigationController:
         case .legacy:
             LegacyDemoViewController(coordinator: self)
         case .nestedFlow:
-            CheckoutCoordinator()
+            CheckoutCoordinatorImp()
         case .routingOptions:
             RoutingOptionsView(coordinator: self)
         case .summary:
@@ -235,85 +235,6 @@ private final class LegacyDemoViewController: UIViewController {
             stack.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 24),
             stack.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -24)
         ])
-    }
-}
-
-@MainActor
-private final class CheckoutCoordinator:
-    NavigationCoordinator<CheckoutDestination> {
-
-    override func landingView() -> any DestinationView {
-        CheckoutLandingView(coordinator: self)
-    }
-
-    override func destinationView(for destination: CheckoutDestination) -> any DestinationView {
-        CheckoutStepView(destination: destination, coordinator: self)
-    }
-}
-
-private enum CheckoutDestination: Hashable {
-    case address
-    case payment
-    case confirmation
-}
-
-private struct CheckoutLandingView: View, DestinationView {
-    let coordinator: CheckoutCoordinator
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "cart")
-                .font(.system(size: 52))
-                .foregroundStyle(.green)
-            Text("Nested checkout flow")
-                .font(.title.bold())
-            Text("The child owns its own typed substack while sharing the root UINavigationController.")
-                .multilineTextAlignment(.center)
-                .foregroundStyle(.secondary)
-            Button("Start checkout") {
-                coordinator.push(.address)
-            }
-            .buttonStyle(.borderedProminent)
-        }
-        .padding()
-        .navigationTitle("Checkout")
-    }
-}
-
-private struct CheckoutStepView: View, DestinationView {
-    let destination: CheckoutDestination
-    let coordinator: CheckoutCoordinator
-
-    private var title: String {
-        switch destination {
-        case .address: "Address"
-        case .payment: "Payment"
-        case .confirmation: "Confirmation"
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 20) {
-            Text(title)
-                .font(.largeTitle.bold())
-            Text("Child stack: \(coordinator.stack.map(String.init(describing:)).joined(separator: " → "))")
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-
-            switch destination {
-            case .address:
-                Button("Continue to payment") { coordinator.push(.payment) }
-                    .buttonStyle(.borderedProminent)
-            case .payment:
-                Button("Continue to confirmation") { coordinator.push(.confirmation) }
-                    .buttonStyle(.borderedProminent)
-            case .confirmation:
-                Button("Restart child flow") { coordinator.popToRoot() }
-                    .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding()
-        .navigationTitle(title)
     }
 }
 
