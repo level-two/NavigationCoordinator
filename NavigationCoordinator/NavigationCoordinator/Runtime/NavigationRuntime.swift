@@ -114,12 +114,28 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
             prefix += 1
         }
 
+        let preservedTopEntry: NavigationEntry?
+        if prefix < desired.count,
+           desired.last == segment.entries.last?.destination {
+            preservedTopEntry = segment.entries.last
+        } else {
+            preservedTopEntry = nil
+        }
+
         if prefix < segment.entries.count {
-            segment.entries[prefix...].forEach { $0.child?.detach() }
+            segment.entries[prefix...].forEach { entry in
+                if entry !== preservedTopEntry {
+                    entry.child?.detach()
+                }
+            }
             segment.entries.removeSubrange(prefix...)
         }
 
         for index in prefix..<desired.count {
+            if index == desired.count - 1, let preservedTopEntry {
+                segment.entries.append(preservedTopEntry)
+                continue
+            }
             let content = makeContent(segment.owner.makeDestination(at: index))
             if let child = content.child {
                 segment.entries.append(NavigationEntry(destination: desired[index], child: child))
