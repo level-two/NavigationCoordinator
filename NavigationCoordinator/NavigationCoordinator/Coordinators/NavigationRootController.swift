@@ -38,9 +38,12 @@ open class NavigationRootController<Destination: Hashable>: UIViewController, Na
         ])
         embeddedNavigationController.didMove(toParent: self)
 
-        let runtime = NavigationRuntime(navigationController: embeddedNavigationController, root: self)
-        self.runtime = runtime
-        runtime.start()
+        installRuntimeIfNeeded()
+    }
+
+    open override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        installRuntimeIfNeeded()
     }
 
     open override func viewDidDisappear(_ animated: Bool) {
@@ -117,6 +120,13 @@ open class NavigationRootController<Destination: Hashable>: UIViewController, Na
             || parent?.isMovingFromParent == true
             || navigationController?.isBeingDismissed == true
             || navigationController?.isMovingFromParent == true
+    }
+
+    private func installRuntimeIfNeeded() {
+        guard runtime == nil else { return }
+        let runtime = NavigationRuntime(navigationController: embeddedNavigationController, root: self)
+        self.runtime = runtime
+        runtime.start()
     }
 
     private func tearDownRuntime() {
