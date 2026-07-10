@@ -2,13 +2,25 @@ import UIKit
 
 @MainActor
 final class NavigationSegment {
-    let owner: any NavigationOwner
+    private weak var weakOwner: (any NavigationOwner)?
+    private var retainedOwner: (any NavigationOwner)?
     let landingController: UIViewController
     var entries: [NavigationEntry] = []
 
-    init(owner: any NavigationOwner, landingController: UIViewController) {
-        self.owner = owner
+    init(owner: any NavigationOwner, retainsOwner: Bool, landingController: UIViewController) {
+        if retainsOwner {
+            retainedOwner = owner
+        } else {
+            weakOwner = owner
+        }
         self.landingController = landingController
+    }
+
+    var owner: any NavigationOwner {
+        guard let owner = retainedOwner ?? weakOwner else {
+            preconditionFailure("Navigation owner deallocated while its segment is still active.")
+        }
+        return owner
     }
 
     var flattened: [UIViewController] {
@@ -20,6 +32,8 @@ final class NavigationSegment {
 
     func detach() {
         entries.forEach { $0.child?.detach() }
-        owner.runtime = nil
+        (retainedOwner ?? weakOwner)?.runtime = nil
+        retainedOwner = nil
+        weakOwner = nil
     }
 }
