@@ -2,16 +2,30 @@ import UIKit
 
 @MainActor
 final class NavigationSegment {
-    let owner: any NavigationOwner
+    private weak var weakOwner: (any NavigationOwner)?
+    private var retainedOwner: (any NavigationOwner)?
     let landingController: UIViewController
     var entries: [NavigationEntry] = []
 
-    init(owner: any NavigationOwner, landingController: UIViewController) {
+    var owner: any NavigationOwner {
+        if let retainedOwner { return retainedOwner }
+        guard let weakOwner else {
+            preconditionFailure("An active navigation segment lost its owner.")
+        }
+        return weakOwner
+    }
+
+    init(
+        owner: any NavigationOwner,
+        landingController: UIViewController,
+        retainsOwner: Bool = true
+    ) {
         precondition(
             owner.activeSegment == nil,
             "A navigation owner cannot be attached to multiple active segments."
         )
-        self.owner = owner
+        weakOwner = owner
+        retainedOwner = retainsOwner ? owner : nil
         self.landingController = landingController
         owner.activeSegment = self
     }

@@ -24,7 +24,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         navigationController?.delegate = self
         guard let rootOwner else { return }
         rootOwner.runtime = self
-        rootSegment = makeSegment(owner: rootOwner)
+        rootSegment = makeSegment(owner: rootOwner, retainsOwner: false)
         rebuildTree()
         navigationController?.setViewControllers(desiredControllers, animated: false)
     }
@@ -74,11 +74,18 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         rootSegment?.flattened ?? []
     }
 
-    private func makeSegment(owner: any NavigationOwner) -> NavigationSegment {
+    private func makeSegment(
+        owner: any NavigationOwner,
+        retainsOwner: Bool = true
+    ) -> NavigationSegment {
         owner.runtime = self
         let landing = makeContent(owner.makeLanding())
         precondition(landing.child == nil, "A coordinator landing view cannot be another coordinator.")
-        return NavigationSegment(owner: owner, landingController: landing.controller!)
+        return NavigationSegment(
+            owner: owner,
+            landingController: landing.controller!,
+            retainsOwner: retainsOwner
+        )
     }
 
     private func makeContent(_ destinationView: any DestinationView)
