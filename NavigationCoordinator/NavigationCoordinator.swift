@@ -27,6 +27,12 @@ extension UIViewController: DestinationView {
     }
 }
 
+public enum NavigationPresentationStyle {
+    case sheet
+    case overlay
+    case fullScreen
+}
+
 @MainActor
 public final class NavigationBuildContext {
     fileprivate let runtime: NavigationRuntime
@@ -78,6 +84,22 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
 
     public final func replaceTop(with destination: Destination) {
         set(stack: stack.isEmpty ? [destination] : Array(stack.dropLast()) + [destination])
+    }
+
+    public final func sheet(_ destination: Destination) {
+        present(destination, style: .sheet)
+    }
+
+    public final func overlay(_ destination: Destination) {
+        present(destination, style: .overlay)
+    }
+
+    public final func fullScreen(_ destination: Destination) {
+        present(destination, style: .fullScreen)
+    }
+
+    public final func present(_ destination: Destination, style: NavigationPresentationStyle) {
+        runtime?.present(destinationView(for: destination), style: style)
     }
 
     public final func set(stack newStack: [Destination]) {
@@ -156,6 +178,22 @@ open class NavigationRootController<Destination: Hashable>: UIViewController, Na
 
     public final func replaceTop(with destination: Destination) {
         set(stack: stack.isEmpty ? [destination] : Array(stack.dropLast()) + [destination])
+    }
+
+    public final func sheet(_ destination: Destination) {
+        present(destination, style: .sheet)
+    }
+
+    public final func overlay(_ destination: Destination) {
+        present(destination, style: .overlay)
+    }
+
+    public final func fullScreen(_ destination: Destination) {
+        present(destination, style: .fullScreen)
+    }
+
+    public final func present(_ destination: Destination, style: NavigationPresentationStyle) {
+        runtime?.present(destinationView(for: destination), style: style)
     }
 
     public final func set(stack newStack: [Destination]) {
@@ -250,6 +288,32 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         reconcile()
     }
 
+    func present(_ destinationView: any DestinationView, style: NavigationPresentationStyle) {
+        guard let navigationController else { return }
+        let content = makePresentedController(destinationView)
+        let controller: UIViewController
+
+        switch style {
+        case .sheet:
+            controller = content
+            controller.modalPresentationStyle = .pageSheet
+            if let sheet = controller.sheetPresentationController {
+                sheet.detents = [.medium(), .large()]
+                sheet.prefersGrabberVisible = true
+                sheet.selectedDetentIdentifier = .medium
+            }
+        case .overlay:
+            controller = NavigationOverlayPresentationController(contentController: content)
+            controller.modalPresentationStyle = .overFullScreen
+            controller.modalTransitionStyle = .crossDissolve
+        case .fullScreen:
+            controller = content
+            controller.modalPresentationStyle = .fullScreen
+        }
+
+        navigationController.present(controller, animated: true)
+    }
+
     private var desiredControllers: [UIViewController] {
         rootSegment?.flattened ?? []
     }
@@ -269,6 +333,16 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
             return (nil, makeSegment(owner: childOwner))
         }
         return (controller, nil)
+    }
+
+    private func makePresentedController(_ destinationView: any DestinationView) -> UIViewController {
+        let context = NavigationBuildContext(runtime: self)
+        let controller = destinationView.makeViewController(context: context)
+        precondition(
+            context.attachedChild == nil,
+            "Present a NavigationRootController for modal navigation. NavigationCoordinator is reserved for stack destinations."
+        )
+        return controller
     }
 
     private func rebuildTree() {
@@ -388,5 +462,63 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
 
     private func sameInstances(_ lhs: [UIViewController], _ rhs: [UIViewController]) -> Bool {
         lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0 === $1 }
+    }
+}
+
+@MainActor
+private final class NavigationOverlayPresentationController: UIViewController {
+    private let contentController: UIViewController
+
+    init(contentController: UIViewController) {
+        self.contentController = contentController
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = UIColor.black.withAlphaComponent(0.35)
+
+        let card = UIView()
+        card.backgroundColor = .systemBackground
+        card.layer.cornerRadius = 24
+        card.layer.cornerCurve = .continuous
+        card.clipsToBounds = true
+        card.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(card)
+
+        addChild(contentController)
+        contentController.view.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(contentController.view)
+        contentController.didMove(toParent: self)
+
+        NSLayoutConstraint.activate([
+            card.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            card.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            card.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            card.heightAnchor.constraint(equalTo: view.safeAreaLayoutGuide.heightAnchor, multiplier: 0.72),
+
+            contentController.view.leadingAnchor.constraint(equalTo: card.leadingAnchor),
+            contentController.view.trailingAnchor.constraint(equalTo: card.trailingAnchor),
+            contentController.view.topAnchor.constraint(equalTo: card.topAnchor),
+            contentController.view.bottomAnchor.constraint(equalTo: card.bottomAnchor)
+        ])
+
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(closeIfBackgroundTapped(_:)))
+        tapGesture.cancelsTouchesInView = false
+        view.addGestureRecognizer(tapGesture)
+    }
+
+    @objc
+    private func closeIfBackgroundTapped(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else { return }
+        let point = gesture.location(in: view)
+        if contentController.view.superview?.frame.contains(point) == false {
+            dismiss(animated: true)
+        }
     }
 }
