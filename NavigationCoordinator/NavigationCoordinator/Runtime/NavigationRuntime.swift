@@ -4,7 +4,7 @@ import UIKit
 final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
     private enum Transition {
         case idle
-        case pushThenNormalize
+        case pushThenNormalize([UIViewController])
         case programmaticPop
     }
 
@@ -154,7 +154,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         } else if current.last === desired.last {
             navigationController.setViewControllers(desired, animated: false)
         } else if let desiredTop = desired.last {
-            transition = .pushThenNormalize
+            transition = .pushThenNormalize(desired)
             navigationController.pushViewController(desiredTop, animated: true)
         }
     }
@@ -165,8 +165,8 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         animated: Bool
     ) {
         switch transition {
-        case .pushThenNormalize:
-            navigationController.setViewControllers(desiredControllers, animated: false)
+        case .pushThenNormalize(let controllers):
+            navigationController.setViewControllers(controllers, animated: false)
             transition = .idle
         case .programmaticPop:
             transition = .idle
