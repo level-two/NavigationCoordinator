@@ -29,6 +29,16 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         navigationController?.setViewControllers(desiredControllers, animated: false)
     }
 
+    func stop() {
+        if navigationController?.delegate === self {
+            navigationController?.delegate = nil
+        }
+        rootSegment?.detach()
+        rootSegment = nil
+        rootOwner?.runtime = nil
+        rootOwner = nil
+    }
+
     func ownerDidChange() {
         rebuildTree()
         reconcile()

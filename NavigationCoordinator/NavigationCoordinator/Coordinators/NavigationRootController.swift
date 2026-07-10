@@ -42,6 +42,20 @@ open class NavigationRootController<Destination: Hashable>: UIViewController, Na
         runtime.start()
     }
 
+    open override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isLeavingHierarchy {
+            tearDownRuntime()
+        }
+    }
+
+    open override func willMove(toParent parent: UIViewController?) {
+        if parent == nil {
+            tearDownRuntime()
+        }
+        super.willMove(toParent: parent)
+    }
+
     public final func push(_ destination: Destination) {
         set(stack: stack + [destination])
     }
@@ -93,5 +107,21 @@ open class NavigationRootController<Destination: Hashable>: UIViewController, Na
 
     func truncateStack(to count: Int) {
         stack = Array(stack.prefix(count))
+    }
+
+    private var isLeavingHierarchy: Bool {
+        isBeingDismissed
+            || isMovingFromParent
+            || parent?.isBeingDismissed == true
+            || parent?.isMovingFromParent == true
+            || navigationController?.isBeingDismissed == true
+            || navigationController?.isMovingFromParent == true
+    }
+
+    private func tearDownRuntime() {
+        guard runtime != nil || !embeddedNavigationController.viewControllers.isEmpty else { return }
+        runtime?.stop()
+        runtime = nil
+        embeddedNavigationController.setViewControllers([], animated: false)
     }
 }
