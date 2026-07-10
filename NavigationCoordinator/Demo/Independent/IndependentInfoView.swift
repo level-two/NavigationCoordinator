@@ -20,3 +20,4 @@ struct IndependentInfoView: View, DestinationView {
         .navigationTitle("Info")
     }
 }
+

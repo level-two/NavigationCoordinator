@@ -1,6 +1,6 @@
 # SwiftUI + UIKit Navigation Coordinator Specification
 
-**Revision:** 3
+**Revision:** 4
 **Implementation status:** Initial application slice implemented
 
 ## Revision Notes
@@ -27,12 +27,20 @@ This revision makes the runtime contract explicit:
   path as push navigation. Coordinators expose presentation helpers that resolve
   `destinationView(for:)` and present the resulting controller through the active
   `UINavigationController`.
+- A feature-facing coordinator protocol is the preferred dependency injected into
+  SwiftUI views and UIKit controllers. That protocol may expose semantic methods
+  such as `showDetails(id:)`, `showSettings()`, and `close()`; it does not have to
+  expose a destination enum or a generic `show(destination:)` method.
+- Typed destination enums remain an implementation detail of the concrete
+  `NavigationCoordinator` or `NavigationRootController`. A generic
+  `show(destination:)` protocol is supported as a compact adapter when it fits a
+  feature, not as a runtime requirement.
 
 ## 1. Purpose
 
 This document describes a UIKit-backed navigation system for SwiftUI feature flows.
 
-The goal is to manage navigation declaratively through typed Swift `Destination` values while rendering the actual screen stack using a single physical `UINavigationController`.
+The goal is to manage navigation declaratively through typed Swift `Destination` values while rendering the actual screen stack using a single physical `UINavigationController`. A feature may keep those values private and expose a semantic coordinator protocol to its screens.
 
 The system should support:
 
@@ -396,6 +404,64 @@ open class NavigationRootController<Destination: Hashable>: UIViewController {
 }
 ```
 
+### 5.6 Feature-Facing Coordinator Protocols
+
+Inject a small feature-specific protocol into screens instead of exposing a
+concrete coordinator. The protocol is an application-facing API; the typed
+`Destination` used by `NavigationCoordinator` is an internal routing mechanism.
+
+The demo's `show(destination:)` protocols are valid when the destination enum is
+already a useful public feature vocabulary. They are not mandatory. Prefer
+separate semantic methods when that keeps a screen independent of route cases or
+when an action does more than a single push.
+
+```swift
+@MainActor
+protocol ProfileCoordinating: AnyObject {
+    func showAccount(id: UUID)
+    func showPrivacy()
+    func close()
+}
+
+private enum ProfileRoute: Hashable {
+    case account(UUID)
+    case privacy
+}
+
+@MainActor
+final class ProfileCoordinator:
+    NavigationCoordinator<ProfileRoute>,
+    ProfileCoordinating
+{
+    override func landingView() -> any DestinationView {
+        ProfileHomeView(coordinator: self)
+    }
+
+    override func destinationView(for route: ProfileRoute) -> any DestinationView {
+        switch route {
+        case .account(let id): AccountView(id: id, coordinator: self)
+        case .privacy: PrivacyView(coordinator: self)
+        }
+    }
+
+    func showAccount(id: UUID) { push(.account(id)) }
+    func showPrivacy() { push(.privacy) }
+    func close() { pop() }
+}
+
+struct ProfileHomeView: View, DestinationView {
+    let coordinator: any ProfileCoordinating
+
+    var body: some View {
+        Button("Privacy") { coordinator.showPrivacy() }
+    }
+}
+```
+
+Keep protocol methods intention-revealing. They may map to `push`, `replaceTop`,
+`set(stack:)`, a presentation helper, or feature-specific coordination logic.
+Do not add a destination enum parameter merely to mirror the concrete class.
+
 ---
 
 ## 6. Example Usage
@@ -491,6 +557,25 @@ final class AppNavigationRootController:
     }
 }
 ```
+
+### 6.3 Application Integration
+
+Use `NavigationRootController` for the app's navigation-tree root and install
+that concrete root controller in `SceneDelegate` (or the equivalent UIKit scene
+setup). The root owns the one physical `UINavigationController`; do not wrap it
+in another navigation controller.
+
+```swift
+let window = UIWindow(windowScene: windowScene)
+window.rootViewController = DemoNavigationCoordinatorImp()
+self.window = window
+window.makeKeyAndVisible()
+```
+
+Use `NavigationCoordinator` for a child feature that should participate in the
+same back stack. Return that child from the parent's `destinationView(for:)`.
+Use a separate `NavigationRootController` for a sheet, overlay, full-screen flow,
+or other independently owned navigation tree.
 
 ---
 
@@ -1082,6 +1167,8 @@ Recommended patterns:
 - Inject coordinator protocols into views or view models carefully.
 - Use weak references where needed.
 - Prefer feature-specific coordinator protocols over exposing concrete coordinators everywhere.
+- Let protocol methods be semantic actions; do not require every protocol to pass
+  a destination enum through `show(destination:)`.
 
 Example:
 
@@ -1281,6 +1368,11 @@ The key visual rule is:
 The key ownership rule is:
 
 > Each coordinator exclusively manages its own typed substack.
+
+The key dependency rule is:
+
+> Screens depend on a feature coordinator protocol. That protocol may expose
+> semantic navigation functions rather than the coordinator's destination enum.
 
 The key UIKit synchronization rule is:
 

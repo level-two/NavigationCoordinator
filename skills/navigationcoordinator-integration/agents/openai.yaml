@@ -1,0 +1,4 @@
+interface:
+  display_name: "NavigationCoordinator Integration"
+  short_description: "Integrate typed UIKit and SwiftUI flows"
+  default_prompt: "Use $navigationcoordinator-integration to add a protocol-backed flow to this NavigationCoordinator app."
