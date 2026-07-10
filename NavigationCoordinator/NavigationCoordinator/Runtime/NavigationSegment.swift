@@ -7,8 +7,13 @@ final class NavigationSegment {
     var entries: [NavigationEntry] = []
 
     init(owner: any NavigationOwner, landingController: UIViewController) {
+        precondition(
+            owner.activeSegment == nil,
+            "A navigation owner cannot be attached to multiple active segments."
+        )
         self.owner = owner
         self.landingController = landingController
+        owner.activeSegment = self
     }
 
     var flattened: [UIViewController] {
@@ -20,6 +25,9 @@ final class NavigationSegment {
 
     func detach() {
         entries.forEach { $0.child?.detach() }
-        owner.runtime = nil
+        if owner.activeSegment === self {
+            owner.activeSegment = nil
+            owner.runtime = nil
+        }
     }
 }

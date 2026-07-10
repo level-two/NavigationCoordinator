@@ -5,6 +5,7 @@ open class NavigationRootController<Destination: Hashable>: UIViewController, Na
     public private(set) var stack: [Destination]
     private let embeddedNavigationController = UINavigationController()
     var runtime: NavigationRuntime?
+    weak var activeSegment: NavigationSegment?
 
     public init(initialStack: [Destination] = []) {
         stack = initialStack

@@ -4,6 +4,7 @@ import UIKit
 open class NavigationCoordinator<Destination: Hashable>: DestinationView, NavigationOwner {
     public private(set) var stack: [Destination]
     weak var runtime: NavigationRuntime?
+    weak var activeSegment: NavigationSegment?
 
     public init(initialStack: [Destination] = []) {
         stack = initialStack
