@@ -19,11 +19,11 @@ final class DemoNavigationCoordinatorImp: NavigationRootController<DemoDestinati
         case .summary:
             SummaryView(coordinator: self)
         case .sheetFlow:
-            IndependentFlowRootController(style: .sheet)
+            IndependentFlowRootCoordinatorImp(style: .sheet)
         case .overlayFlow:
-            IndependentFlowRootController(style: .overlay)
+            IndependentFlowRootCoordinatorImp(style: .overlay)
         case .fullScreenFlow:
-            IndependentFlowRootController(style: .fullScreen)
+            IndependentFlowRootCoordinatorImp(style: .fullScreen)
         case .installDemoStack, .installDuplicateDetails, .replaceTopWithLegacy,
                 .replaceTopWithSummary, .installCheckoutAndSummary, .popToRoot:
             fatalError("Navigation action is not a screen destination.")
