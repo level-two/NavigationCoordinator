@@ -8,11 +8,21 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         case programmaticPop
     }
 
+    private struct NavigationPathComponent {
+        let segment: NavigationSegment
+        let retainedDestinationCount: Int
+    }
+
+    private struct ControllerLocation {
+        let path: [NavigationPathComponent]
+    }
+
     private weak var navigationController: UINavigationController?
     private weak var rootOwner: (any NavigationOwner)?
     private var rootSegment: NavigationSegment?
     private var transition: Transition = .idle
     private var needsReconciliation = false
+    private var controllerLocations: [ObjectIdentifier: ControllerLocation] = [:]
 
     init(navigationController: UINavigationController, root: any NavigationOwner) {
         self.navigationController = navigationController
@@ -35,6 +45,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         }
         rootSegment?.detach()
         rootSegment = nil
+        controllerLocations.removeAll()
         rootOwner?.runtime = nil
         rootOwner = nil
     }
@@ -109,8 +120,12 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
     }
 
     private func rebuildTree() {
-        guard let rootSegment else { return }
+        guard let rootSegment else {
+            controllerLocations.removeAll()
+            return
+        }
         rebuild(rootSegment)
+        rebuildControllerLocations(from: rootSegment)
     }
 
     private func rebuild(_ segment: NavigationSegment) {
@@ -160,6 +175,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         guard let navigationController else { return }
         guard case .idle = transition, navigationController.transitionCoordinator == nil else {
             needsReconciliation = true
+            debugLog("Coalescing reconciliation during an active navigation transition.")
             return
         }
 
@@ -168,15 +184,19 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         guard !sameInstances(current, desired) else { return }
 
         if current.isEmpty {
+            debugLog(action: "silent install", current: current, desired: desired)
             navigationController.setViewControllers(desired, animated: false)
         } else if desired.count < current.count,
                   sameInstances(Array(current.prefix(desired.count)), desired),
                   let target = desired.last {
+            debugLog(action: "animated pop", current: current, desired: desired)
             transition = .programmaticPop
             navigationController.popToViewController(target, animated: true)
         } else if current.last === desired.last {
+            debugLog(action: "silent normalization", current: current, desired: desired)
             navigationController.setViewControllers(desired, animated: false)
         } else if let desiredTop = desired.last {
+            debugLog(action: "animated push then normalize", current: current, desired: desired)
             transition = .pushThenNormalize(desired)
             navigationController.pushViewController(desiredTop, animated: true)
         }
@@ -206,40 +226,94 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
 
     private func synchronizeUserPop(_ visible: [UIViewController]) {
         let desired = desiredControllers
-        guard visible.count < desired.count,
-              sameInstances(visible, Array(desired.prefix(visible.count))),
-              let rootSegment else { return }
-        truncate(rootSegment, keeping: visible.count)
+        guard visible.count < desired.count else { return }
+        guard sameInstances(visible, Array(desired.prefix(visible.count))) else {
+            debugLog("UIKit's visible stack is not a retained prefix of the logical stack.")
+            return
+        }
+        guard let visibleTop = visible.last else {
+            debugLog("UIKit removed the root landing controller; logical ownership cannot be retained.")
+            return
+        }
+        guard let location = controllerLocations[ObjectIdentifier(visibleTop)] else {
+            debugLog("The visible UIKit controller has no logical ownership metadata.")
+            return
+        }
+
+        for component in location.path.reversed() {
+            component.segment.owner.truncateStack(to: component.retainedDestinationCount)
+        }
+        debugLog("Mapped a confirmed UIKit pop through \(location.path.count) logical owner level(s).")
         rebuildTree()
     }
 
-    @discardableResult
-    private func truncate(_ segment: NavigationSegment, keeping count: Int) -> Int {
-        guard count > 0 else {
-            segment.owner.truncateStack(to: 0)
-            return 0
-        }
+    private func rebuildControllerLocations(from rootSegment: NavigationSegment) {
+        var locations: [ObjectIdentifier: ControllerLocation] = [:]
+        registerControllers(
+            in: rootSegment,
+            ancestorPath: [],
+            locations: &locations
+        )
+        controllerLocations = locations
+    }
 
-        var consumed = 1
+    private func registerControllers(
+        in segment: NavigationSegment,
+        ancestorPath: [NavigationPathComponent],
+        locations: inout [ObjectIdentifier: ControllerLocation]
+    ) {
+        register(
+            segment.landingController,
+            at: ancestorPath + [
+                NavigationPathComponent(segment: segment, retainedDestinationCount: 0)
+            ],
+            locations: &locations
+        )
+
         for (index, entry) in segment.entries.enumerated() {
-            let entryCount = entry.child?.flattened.count ?? 1
-            if consumed + entryCount <= count {
-                consumed += entryCount
-                continue
+            let path = ancestorPath + [
+                NavigationPathComponent(segment: segment, retainedDestinationCount: index + 1)
+            ]
+            if let child = entry.child {
+                registerControllers(in: child, ancestorPath: path, locations: &locations)
+            } else if let controller = entry.controller {
+                register(controller, at: path, locations: &locations)
             }
-
-            if let child = entry.child, count > consumed {
-                truncate(child, keeping: count - consumed)
-                segment.owner.truncateStack(to: index + 1)
-            } else {
-                segment.owner.truncateStack(to: index)
-            }
-            return count
         }
-        return consumed
+    }
+
+    private func register(
+        _ controller: UIViewController,
+        at path: [NavigationPathComponent],
+        locations: inout [ObjectIdentifier: ControllerLocation]
+    ) {
+        let identifier = ObjectIdentifier(controller)
+        if locations.updateValue(ControllerLocation(path: path), forKey: identifier) != nil {
+            debugLog("A UIViewController instance is used at multiple logical navigation locations.")
+        }
     }
 
     private func sameInstances(_ lhs: [UIViewController], _ rhs: [UIViewController]) -> Bool {
         lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0 === $1 }
+    }
+
+    private func debugLog(
+        action: String,
+        current: [UIViewController],
+        desired: [UIViewController]
+    ) {
+        debugLog(
+            "Action: \(action); old: \(controllerSummary(current)); new: \(controllerSummary(desired))."
+        )
+    }
+
+    private func controllerSummary(_ controllers: [UIViewController]) -> String {
+        "[" + controllers.map { String(describing: type(of: $0)) }.joined(separator: ", ") + "]"
+    }
+
+    private func debugLog(_ message: @autoclosure () -> String) {
+#if DEBUG
+        print("[NavigationRuntime] \(message())")
+#endif
     }
 }
