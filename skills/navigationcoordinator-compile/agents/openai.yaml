@@ -1,0 +1,4 @@
+interface:
+  display_name: "NavigationCoordinator Compile"
+  short_description: "Build and verify the iOS coordinator app"
+  default_prompt: "Use $navigationcoordinator-compile to build and verify the NavigationCoordinator Xcode project."
