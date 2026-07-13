@@ -5,6 +5,7 @@ final class NavigationSegment {
     private weak var weakOwner: (any NavigationOwner)?
     private var retainedOwner: (any NavigationOwner)?
     let landingController: UIViewController
+    weak var parent: NavigationSegment?
     var entries: [NavigationEntry] = []
 
     var owner: any NavigationOwner {
@@ -18,6 +19,7 @@ final class NavigationSegment {
     init(
         owner: any NavigationOwner,
         landingController: UIViewController,
+        parent: NavigationSegment? = nil,
         retainsOwner: Bool = true
     ) {
         precondition(
@@ -27,6 +29,7 @@ final class NavigationSegment {
         weakOwner = owner
         retainedOwner = retainsOwner ? owner : nil
         self.landingController = landingController
+        self.parent = parent
         owner.activeSegment = self
     }
 

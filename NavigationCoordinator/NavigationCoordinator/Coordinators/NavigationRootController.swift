@@ -1,9 +1,8 @@
 import UIKit
 
 @MainActor
-open class NavigationRootController<Destination: Hashable>: UIViewController, NavigationOwner {
+open class NavigationRootController<Destination: Hashable>: UINavigationController, NavigationOwner {
     public private(set) var stack: [Destination]
-    private let embeddedNavigationController = UINavigationController()
     var runtime: NavigationRuntime?
     weak var activeSegment: NavigationSegment?
 
@@ -27,17 +26,6 @@ open class NavigationRootController<Destination: Hashable>: UIViewController, Na
 
     open override func viewDidLoad() {
         super.viewDidLoad()
-        addChild(embeddedNavigationController)
-        embeddedNavigationController.view.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(embeddedNavigationController.view)
-        NSLayoutConstraint.activate([
-            embeddedNavigationController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            embeddedNavigationController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            embeddedNavigationController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            embeddedNavigationController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-        embeddedNavigationController.didMove(toParent: self)
-
         installRuntimeIfNeeded()
     }
 
@@ -124,15 +112,15 @@ open class NavigationRootController<Destination: Hashable>: UIViewController, Na
 
     private func installRuntimeIfNeeded() {
         guard runtime == nil else { return }
-        let runtime = NavigationRuntime(navigationController: embeddedNavigationController, root: self)
+        let runtime = NavigationRuntime(navigationController: self, root: self)
         self.runtime = runtime
         runtime.start()
     }
 
     private func tearDownRuntime() {
-        guard runtime != nil || !embeddedNavigationController.viewControllers.isEmpty else { return }
+        guard runtime != nil || !viewControllers.isEmpty else { return }
         runtime?.stop()
         runtime = nil
-        embeddedNavigationController.setViewControllers([], animated: false)
+        setViewControllers([], animated: false)
     }
 }

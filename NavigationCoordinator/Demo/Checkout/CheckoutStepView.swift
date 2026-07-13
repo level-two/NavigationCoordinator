@@ -38,5 +38,10 @@ struct CheckoutStepView: View, DestinationView {
         }
         .padding()
         .navigationTitle(title)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Cancel") { coordinator.finish() }
+            }
+        }
     }
 }

@@ -55,6 +55,14 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         reconcile()
     }
 
+    func finish(_ segment: NavigationSegment) {
+        guard let parent = segment.parent,
+              let index = parent.entries.firstIndex(where: { $0.child === segment })
+        else { return }
+        parent.owner.truncateStack(to: index)
+        ownerDidChange()
+    }
+
     func present(_ destinationView: any DestinationView, style: NavigationPresentationStyle) {
         guard let navigationController else { return }
         let content = makePresentedController(destinationView)
@@ -87,6 +95,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
 
     private func makeSegment(
         owner: any NavigationOwner,
+        parent: NavigationSegment? = nil,
         retainsOwner: Bool = true
     ) -> NavigationSegment {
         owner.runtime = self
@@ -95,16 +104,20 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         return NavigationSegment(
             owner: owner,
             landingController: landing.controller!,
+            parent: parent,
             retainsOwner: retainsOwner
         )
     }
 
-    private func makeContent(_ destinationView: any DestinationView)
+    private func makeContent(
+        _ destinationView: any DestinationView,
+        parent: NavigationSegment? = nil
+    )
         -> (controller: UIViewController?, child: NavigationSegment?) {
         let context = NavigationBuildContext(runtime: self)
         let controller = destinationView.makeViewController(context: context)
         if let childOwner = context.attachedChild {
-            return (nil, makeSegment(owner: childOwner))
+            return (nil, makeSegment(owner: childOwner, parent: parent))
         }
         return (controller, nil)
     }
@@ -158,7 +171,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
                 segment.entries.append(preservedTopEntry)
                 continue
             }
-            let content = makeContent(segment.owner.makeDestination(at: index))
+            let content = makeContent(segment.owner.makeDestination(at: index), parent: segment)
             if let child = content.child {
                 segment.entries.append(NavigationEntry(destination: desired[index], child: child))
             } else {

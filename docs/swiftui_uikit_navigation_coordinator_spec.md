@@ -23,6 +23,9 @@ This revision makes the runtime contract explicit:
   rules in section 10.
 - Public stack mutations are idempotent when the requested stack equals the current
   stack.
+- A child coordinator may finish its flow by removing the parent destination that
+  owns it. This pops the child's landing screen, its entire substack, and any routes
+  above it in the flattened UIKit stack.
 - Sheet, overlay, and full-screen presentation use the same destination builder
   path as push navigation. Coordinators expose presentation helpers that resolve
   `destinationView(for:)` and present the resulting controller through the active
@@ -62,7 +65,7 @@ The system should not manage alerts, tabs, windows, deep-link routing, app-level
 The navigation system consists of the following primary types:
 
 ```swift
-NavigationRootController      // UIViewController subclass; owns the physical UINavigationController
+NavigationRootController      // UINavigationController subclass; owns the physical stack
 NavigationCoordinator         // Flow-level coordinator; not a UIViewController and not a SwiftUI View
 DestinationView               // Anything that can become a screen in the stack
 NavigationRuntime             // Internal hierarchical stack manager and UIKit reconciler
@@ -105,11 +108,11 @@ Flattened UIKit stack:
 
 ### NavigationRootController
 
-A `UIViewController` subclass that embeds and owns one physical `UINavigationController`.
+A `UINavigationController` subclass that owns the one physical navigation stack.
 
 Responsibilities:
 
-- Instantiate and embed `UINavigationController`.
+- Act as the physical `UINavigationController`.
 - Provide root landing view and root destination views.
 - Expose navigation controls similar to `NavigationCoordinator`.
 - Own `NavigationRuntime`.
@@ -310,6 +313,11 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView {
         set(stack: [])
     }
 
+    /// Removes this entire child flow, including its landing view.
+    public func finish() {
+        // Ask the runtime to remove this coordinator's owning parent destination.
+    }
+
     public func replaceTop(with destination: Destination) {
         guard !stack.isEmpty else {
             set(stack: [destination])
@@ -329,20 +337,19 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView {
 
 ### 5.5 NavigationRootController
 
-`NavigationRootController` should expose the same high-level API as `NavigationCoordinator`, but it is also a `UIViewController` and owns the physical `UINavigationController`.
+`NavigationRootController` should expose the same stack and presentation API as
+`NavigationCoordinator`, except for child-only `finish()`. It is itself the physical
+`UINavigationController`.
 
 ```swift
 @MainActor
-open class NavigationRootController<Destination: Hashable>: UIViewController {
+open class NavigationRootController<Destination: Hashable>: UINavigationController {
     public private(set) var stack: [Destination]
 
-    private let navigationController: UINavigationController
-    private let runtime: NavigationRuntime
+    private var runtime: NavigationRuntime?
 
     public init(initialStack: [Destination] = []) {
         self.stack = initialStack
-        self.navigationController = UINavigationController()
-        self.runtime = NavigationRuntime()
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -1350,7 +1357,7 @@ user-driven pop mapping
 
 The system provides a UIKit-backed, declarative, hierarchical navigation architecture.
 
-A `NavigationRootController` owns one physical `UINavigationController`. Feature flows are implemented as typed `NavigationCoordinator<Destination>` subclasses. Each coordinator owns a `Destination: Hashable` stack and provides two builders:
+A `NavigationRootController` is the one physical `UINavigationController`. Feature flows are implemented as typed `NavigationCoordinator<Destination>` subclasses. Each coordinator owns a `Destination: Hashable` stack and provides two builders:
 
 ```swift
 landingView() -> any DestinationView

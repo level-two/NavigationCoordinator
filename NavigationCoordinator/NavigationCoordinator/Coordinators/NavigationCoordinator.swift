@@ -31,6 +31,15 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
         set(stack: [])
     }
 
+    /// Removes this coordinator's entire active flow from its parent stack.
+    ///
+    /// The landing view, this coordinator's destinations, and any routes above the
+    /// flow are popped. Calling `finish()` while detached has no effect.
+    public final func finish() {
+        guard let activeSegment else { return }
+        runtime?.finish(activeSegment)
+    }
+
     public final func replaceTop(with destination: Destination) {
         set(stack: stack.isEmpty ? [destination] : Array(stack.dropLast()) + [destination])
     }

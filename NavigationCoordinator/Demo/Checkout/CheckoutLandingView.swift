@@ -17,6 +17,9 @@ struct CheckoutLandingView: View, DestinationView {
                 coordinator.show(destination: .address)
             }
             .buttonStyle(.borderedProminent)
+            Button("Cancel checkout") {
+                coordinator.finish()
+            }
         }
         .padding()
         .navigationTitle("Checkout")
