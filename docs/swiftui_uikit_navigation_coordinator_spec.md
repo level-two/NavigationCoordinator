@@ -208,11 +208,14 @@ Demo guidance:
 ### 5.1 DestinationView
 
 ```swift
-@MainActor
 public protocol DestinationView {
+    @MainActor
     func makeViewController(context: NavigationBuildContext) -> UIViewController
 }
 ```
+
+Only controller construction is main-actor-isolated. Conforming to
+`DestinationView` does not isolate the conforming type's unrelated state and API.
 
 `NavigationBuildContext` is an internal or public-support object supplied by the runtime during controller construction.
 
