@@ -78,9 +78,8 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
                 sheet.selectedDetentIdentifier = .medium
             }
         case .overlay:
-            controller = NavigationOverlayPresentationController(contentController: content)
+            controller = content
             controller.modalPresentationStyle = .overFullScreen
-            controller.modalTransitionStyle = .crossDissolve
         case .fullScreen:
             controller = content
             controller.modalPresentationStyle = .fullScreen
