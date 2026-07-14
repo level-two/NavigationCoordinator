@@ -310,11 +310,6 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         switch style {
         case .sheet:
             controller.modalPresentationStyle = .pageSheet
-            if let sheet = controller.sheetPresentationController {
-                sheet.detents = [.medium(), .large()]
-                sheet.prefersGrabberVisible = true
-                sheet.selectedDetentIdentifier = .medium
-            }
         case .overlay:
             controller.modalPresentationStyle = .overFullScreen
         case .fullScreen:
