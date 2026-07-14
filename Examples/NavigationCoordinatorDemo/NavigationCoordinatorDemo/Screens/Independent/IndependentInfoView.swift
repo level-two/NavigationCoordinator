@@ -1,3 +1,4 @@
+import NavigationCoordinator
 import SwiftUI
 
 struct IndependentInfoView: View, DestinationView {

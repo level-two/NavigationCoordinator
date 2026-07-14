@@ -1,1 +1,5 @@
-NavigationCoordinator.xcodeproj/project.xcworkspace/xcuserdata
+.build/
+.DS_Store
+**/*.xcodeproj/project.xcworkspace/xcuserdata/
+**/*.xcodeproj/xcuserdata/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/

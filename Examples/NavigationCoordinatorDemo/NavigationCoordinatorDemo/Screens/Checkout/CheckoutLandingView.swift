@@ -1,3 +1,4 @@
+import NavigationCoordinator
 import SwiftUI
 
 struct CheckoutLandingView: View, DestinationView {
