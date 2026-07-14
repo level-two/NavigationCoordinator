@@ -2,7 +2,7 @@ import Foundation
 
 @MainActor
 protocol NavigationOwner: AnyObject {
-    var erasedStack: [AnyHashable] { get }
+    var routes: [NavigationRoute] { get }
     var runtime: NavigationRuntime? { get set }
     var activeSegment: NavigationSegment? { get set }
 

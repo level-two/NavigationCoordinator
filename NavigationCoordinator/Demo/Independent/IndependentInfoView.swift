@@ -14,10 +14,9 @@ struct IndependentInfoView: View, DestinationView {
                 .multilineTextAlignment(.center)
             Button("Continue to review") { coordinator.show(destination: .review) }
                 .buttonStyle(.borderedProminent)
-            Button("Close \(style.title)") { coordinator.show(destination: .dismiss) }
+            Button("Finish \(style.title)") { coordinator.finish() }
         }
         .padding()
         .navigationTitle("Info")
     }
 }
-

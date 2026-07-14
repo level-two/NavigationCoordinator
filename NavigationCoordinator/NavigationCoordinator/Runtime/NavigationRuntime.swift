@@ -1,7 +1,7 @@
 import UIKit
 
 @MainActor
-final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
+final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdaptivePresentationControllerDelegate {
     private enum Transition {
         case idle
         case pushThenNormalize([UIViewController])
@@ -23,6 +23,9 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
     private var transition: Transition = .idle
     private var needsReconciliation = false
     private var controllerLocations: [ObjectIdentifier: ControllerLocation] = [:]
+    private weak var managedPresentedController: UIViewController?
+    private weak var managedPresentationEntry: NavigationEntry?
+    private var presentationTransitionInFlight = false
 
     init(navigationController: UINavigationController, root: any NavigationOwner) {
         self.navigationController = navigationController
@@ -37,6 +40,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         rootSegment = makeSegment(owner: rootOwner, retainsOwner: false)
         rebuildTree()
         navigationController?.setViewControllers(desiredControllers, animated: false)
+        reconcilePresentation()
     }
 
     func stop() {
@@ -46,6 +50,8 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         rootSegment?.detach()
         rootSegment = nil
         controllerLocations.removeAll()
+        managedPresentedController = nil
+        managedPresentationEntry = nil
         rootOwner?.runtime = nil
         rootOwner = nil
     }
@@ -53,6 +59,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
     func ownerDidChange() {
         rebuildTree()
         reconcile()
+        reconcilePresentation()
     }
 
     func finish(_ segment: NavigationSegment) {
@@ -63,29 +70,12 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         ownerDidChange()
     }
 
-    func present(_ destinationView: any DestinationView, style: NavigationPresentationStyle) {
-        guard let navigationController else { return }
-        let content = makePresentedController(destinationView)
-        let controller: UIViewController
-
-        switch style {
-        case .sheet:
-            controller = content
-            controller.modalPresentationStyle = .pageSheet
-            if let sheet = controller.sheetPresentationController {
-                sheet.detents = [.medium(), .large()]
-                sheet.prefersGrabberVisible = true
-                sheet.selectedDetentIdentifier = .medium
-            }
-        case .overlay:
-            controller = content
-            controller.modalPresentationStyle = .overFullScreen
-        case .fullScreen:
-            controller = content
-            controller.modalPresentationStyle = .fullScreen
-        }
-
-        navigationController.present(controller, animated: true)
+    func finish(_ entry: NavigationEntry) {
+        guard let segment = entry.segment,
+              let index = segment.entries.firstIndex(where: { $0 === entry })
+        else { return }
+        segment.owner.truncateStack(to: index)
+        ownerDidChange()
     }
 
     private var desiredControllers: [UIViewController] {
@@ -121,16 +111,6 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         return (controller, nil)
     }
 
-    private func makePresentedController(_ destinationView: any DestinationView) -> UIViewController {
-        let context = NavigationBuildContext(runtime: self)
-        let controller = destinationView.makeViewController(context: context)
-        precondition(
-            context.attachedChild == nil,
-            "Present a NavigationRootController for modal navigation. NavigationCoordinator is reserved for stack destinations."
-        )
-        return controller
-    }
-
     private func rebuildTree() {
         guard let rootSegment else {
             controllerLocations.removeAll()
@@ -141,16 +121,18 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
     }
 
     private func rebuild(_ segment: NavigationSegment) {
-        let desired = segment.owner.erasedStack
+        let desired = segment.owner.routes
         var prefix = 0
         while prefix < min(desired.count, segment.entries.count),
-              desired[prefix] == segment.entries[prefix].destination {
+              desired[prefix].destination == segment.entries[prefix].destination,
+              desired[prefix].presentationStyle == segment.entries[prefix].presentationStyle {
             prefix += 1
         }
 
         let preservedTopEntry: NavigationEntry?
         if prefix < desired.count,
-           desired.last == segment.entries.last?.destination {
+           desired.last?.destination == segment.entries.last?.destination,
+           desired.last?.presentationStyle == segment.entries.last?.presentationStyle {
             preservedTopEntry = segment.entries.last
         } else {
             preservedTopEntry = nil
@@ -159,7 +141,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
         if prefix < segment.entries.count {
             segment.entries[prefix...].forEach { entry in
                 if entry !== preservedTopEntry {
-                    entry.child?.detach()
+                    entry.detach()
                 }
             }
             segment.entries.removeSubrange(prefix...)
@@ -170,12 +152,28 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
                 segment.entries.append(preservedTopEntry)
                 continue
             }
+            let route = desired[index]
             let content = makeContent(segment.owner.makeDestination(at: index), parent: segment)
+            let entry: NavigationEntry
             if let child = content.child {
-                segment.entries.append(NavigationEntry(destination: desired[index], child: child))
+                precondition(
+                    route.presentationStyle == nil,
+                    "Present a NavigationRootController for modal navigation. NavigationCoordinator is reserved for stack destinations."
+                )
+                entry = NavigationEntry(destination: route.destination, child: child)
             } else {
-                segment.entries.append(NavigationEntry(destination: desired[index], controller: content.controller!))
+                entry = NavigationEntry(
+                    destination: route.destination,
+                    presentationStyle: route.presentationStyle,
+                    controller: content.controller!
+                )
+                if route.presentationStyle != nil,
+                   let rootController = content.controller as? any PresentedNavigationRootController {
+                    rootController.attach(to: self, entry: entry)
+                }
             }
+            entry.segment = segment
+            segment.entries.append(entry)
         }
 
         segment.entries.forEach {
@@ -234,6 +232,94 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate {
             rebuildTree()
         }
         reconcile()
+        reconcilePresentation()
+    }
+
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        guard presentationController.presentedViewController === managedPresentedController else { return }
+        let dismissedEntry = managedPresentationEntry
+        managedPresentedController = nil
+        managedPresentationEntry = nil
+        if let dismissedEntry {
+            finish(dismissedEntry)
+        }
+    }
+
+    private func reconcilePresentation() {
+        guard !presentationTransitionInFlight, let navigationController else { return }
+
+        let desiredEntry = rootSegment?.lastPresentationEntry
+        let desiredController = desiredEntry?.controller
+        let currentController = managedPresentedController
+
+        if currentController === desiredController {
+            guard let currentController else { return }
+            if currentController.presentingViewController != nil
+                || navigationController.presentedViewController === currentController {
+                return
+            }
+
+            let dismissedEntry = managedPresentationEntry
+            managedPresentedController = nil
+            managedPresentationEntry = nil
+            if let dismissedEntry {
+                finish(dismissedEntry)
+            }
+            return
+        }
+
+        if let currentController {
+            presentationTransitionInFlight = true
+            currentController.dismiss(animated: true) { [weak self, weak currentController] in
+                guard let self else { return }
+                if self.managedPresentedController === currentController {
+                    self.managedPresentedController = nil
+                    self.managedPresentationEntry = nil
+                }
+                self.presentationTransitionInFlight = false
+                self.reconcilePresentation()
+            }
+            return
+        }
+
+        guard let desiredEntry, let desiredController, let style = desiredEntry.presentationStyle else {
+            return
+        }
+        guard navigationController.presentedViewController == nil else {
+            debugLog("Waiting to present a navigation destination because UIKit is already presenting another controller.")
+            return
+        }
+
+        configure(desiredController, for: style)
+        managedPresentedController = desiredController
+        managedPresentationEntry = desiredEntry
+        presentationTransitionInFlight = true
+        navigationController.present(desiredController, animated: true) { [weak self, weak desiredController] in
+            guard let self else { return }
+            desiredController?.presentationController?.delegate = self
+            self.presentationTransitionInFlight = false
+            self.reconcilePresentation()
+        }
+        desiredController.presentationController?.delegate = self
+    }
+
+    private func configure(
+        _ controller: UIViewController,
+        for style: NavigationPresentationStyle
+    ) {
+        switch style {
+        case .sheet:
+            controller.modalPresentationStyle = .pageSheet
+            if let sheet = controller.sheetPresentationController {
+                sheet.detents = [.medium(), .large()]
+                sheet.prefersGrabberVisible = true
+                sheet.selectedDetentIdentifier = .medium
+            }
+        case .overlay:
+            controller.modalPresentationStyle = .overFullScreen
+        case .fullScreen:
+            controller.modalPresentationStyle = .fullScreen
+        }
     }
 
     private func synchronizeUserPop(_ visible: [UIViewController]) {

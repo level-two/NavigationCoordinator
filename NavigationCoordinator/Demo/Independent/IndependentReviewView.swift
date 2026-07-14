@@ -13,7 +13,7 @@ struct IndependentReviewView: View, DestinationView {
                 .multilineTextAlignment(.center)
             Button("Reset presented flow") { coordinator.show(destination: .reset) }
                 .buttonStyle(.borderedProminent)
-            Button("Close \(style.title)") { coordinator.show(destination: .dismiss) }
+            Button("Finish \(style.title)") { coordinator.finish() }
         }
         .padding()
         .navigationTitle("Review")

@@ -24,7 +24,7 @@ struct DemoHomeView: View, DestinationView {
                 Label("One physical navigation controller", systemImage: "square.stack.3d.up")
                 Label("Back button updates typed stacks", systemImage: "arrow.backward")
                 Label("Swipe-back can be cancelled safely", systemImage: "hand.draw")
-                Label("Sheets and overlays own separate navigation trees", systemImage: "rectangle.on.rectangle")
+                Label("Presentations remain in the parent typed stack", systemImage: "rectangle.on.rectangle")
             }
         }
         .navigationTitle("Coordinator Demo")

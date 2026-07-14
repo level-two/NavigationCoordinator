@@ -10,7 +10,7 @@ struct IndependentLandingView: View, DestinationView {
                 VStack(alignment: .leading, spacing: 12) {
                     Image(systemName: style.symbolName).font(.system(size: 42)).foregroundStyle(.teal)
                     Text(style.title).font(.title.bold())
-                    Text("This presentation owns a separate NavigationRootController. Parent stack mutations and back gestures do not change this flow's typed stack.")
+                    Text("This presentation owns a separate NavigationRootController. Its parent keeps this presentation as a typed destination while this flow owns its internal stack.")
                         .foregroundStyle(.secondary)
                 }
                 .padding(.vertical, 8)
@@ -21,7 +21,7 @@ struct IndependentLandingView: View, DestinationView {
                 Button("Install info → review") { coordinator.show(destination: .installInfoAndReview) }
             }
             Section("Dismiss") {
-                Button("Close \(style.title)") { coordinator.show(destination: .dismiss) }
+                Button("Finish \(style.title)") { coordinator.finish() }
             }
         }
         .navigationTitle(style.title)

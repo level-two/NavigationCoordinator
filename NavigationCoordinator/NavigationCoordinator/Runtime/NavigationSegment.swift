@@ -36,12 +36,22 @@ final class NavigationSegment {
     var flattened: [UIViewController] {
         [landingController] + entries.flatMap { entry in
             if let child = entry.child { return child.flattened }
+            guard entry.presentationStyle == nil else { return [] }
             return entry.controller.map { [$0] } ?? []
         }
     }
 
+    var lastPresentationEntry: NavigationEntry? {
+        entries.reduce(nil) { result, entry in
+            if let childPresentation = entry.child?.lastPresentationEntry {
+                return childPresentation
+            }
+            return entry.presentationStyle == nil ? result : entry
+        }
+    }
+
     func detach() {
-        entries.forEach { $0.child?.detach() }
+        entries.forEach { $0.detach() }
         if owner.activeSegment === self {
             owner.activeSegment = nil
             owner.runtime = nil

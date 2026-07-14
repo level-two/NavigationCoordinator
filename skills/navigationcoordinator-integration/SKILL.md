@@ -44,8 +44,13 @@ Implement those methods by mapping them to the base API:
 ```swift
 func showOrder(id: Order.ID) { push(.order(id)) }
 func showFilters() { sheet(.filters) }
-func close() { pop() }
+func close() { finish() }
 ```
+
+Use `pop()` when `close()` means remove only the current internal screen. Use
+`finish()` when a child `NavigationCoordinator` should remove its entire flow or
+when a presented `NavigationRootController` should remove its presentation
+destination from the parent stack.
 
 `show(destination:)` is also supported when the enum is intentionally part of
 the feature API, as in the repository demo. Do not force that shape: semantic
@@ -61,7 +66,10 @@ additional feature logic without exposing an enum.
 5. Pass `self` to screens as the protocol existential.
 
 Treat presentation as a boundary: use a new `NavigationRootController` for a
-separate modal tree. A child `NavigationCoordinator` belongs in the shared stack.
+separate modal tree. The sheet, overlay, or full-screen destination remains in
+the presenting coordinator's typed stack, while the presented root owns its own
+internal stack and can call `finish()` to remove itself. A child
+`NavigationCoordinator` belongs in the shared physical stack.
 
 ## Install the Root
 
@@ -74,4 +82,5 @@ and visible. The demo's `SceneDelegate` is the local reference implementation.
 - Confirm screens only know their feature protocol.
 - Confirm the destination builder handles every routable case; keep action-only enum cases out of it.
 - Confirm nested flows use `NavigationCoordinator` and independent presentations use `NavigationRootController`.
+- Confirm presentation destinations appear in the parent's typed stack and a presented root's `finish()` removes them.
 - Build with the repository's `navigationcoordinator-compile` skill or `skills/navigationcoordinator-compile/scripts/build-navigationcoordinator.sh` after Swift changes.

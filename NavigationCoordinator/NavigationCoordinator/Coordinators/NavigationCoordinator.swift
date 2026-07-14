@@ -3,11 +3,13 @@ import UIKit
 @MainActor
 open class NavigationCoordinator<Destination: Hashable>: DestinationView, NavigationOwner {
     public private(set) var stack: [Destination]
+    private var presentationStyles: [NavigationPresentationStyle?]
     weak var runtime: NavigationRuntime?
     weak var activeSegment: NavigationSegment?
 
     public init(initialStack: [Destination] = []) {
         stack = initialStack
+        presentationStyles = Array(repeating: nil, count: initialStack.count)
     }
 
     open func landingView() -> any DestinationView {
@@ -19,12 +21,13 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
     }
 
     public final func push(_ destination: Destination) {
-        set(stack: stack + [destination])
+        append(destination, presentationStyle: nil)
     }
 
     public final func pop() {
         guard !stack.isEmpty else { return }
-        set(stack: Array(stack.dropLast()))
+        truncateStack(to: stack.count - 1)
+        runtime?.ownerDidChange()
     }
 
     public final func popToRoot() {
@@ -41,7 +44,10 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
     }
 
     public final func replaceTop(with destination: Destination) {
-        set(stack: stack.isEmpty ? [destination] : Array(stack.dropLast()) + [destination])
+        if !stack.isEmpty {
+            truncateStack(to: stack.count - 1)
+        }
+        append(destination, presentationStyle: nil)
     }
 
     public final func sheet(_ destination: Destination) {
@@ -57,12 +63,13 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
     }
 
     public final func present(_ destination: Destination, style: NavigationPresentationStyle) {
-        runtime?.present(destinationView(for: destination), style: style)
+        append(destination, presentationStyle: style)
     }
 
     public final func set(stack newStack: [Destination]) {
         guard stack != newStack else { return }
         stack = newStack
+        presentationStyles = Array(repeating: nil, count: newStack.count)
         runtime?.ownerDidChange()
     }
 
@@ -70,7 +77,11 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
         context.attach(self)
     }
 
-    var erasedStack: [AnyHashable] { stack.map(AnyHashable.init) }
+    var routes: [NavigationRoute] {
+        zip(stack, presentationStyles).map {
+            NavigationRoute(destination: AnyHashable($0), presentationStyle: $1)
+        }
+    }
 
     func makeLanding() -> any DestinationView {
         landingView()
@@ -82,5 +93,15 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
 
     func truncateStack(to count: Int) {
         stack = Array(stack.prefix(count))
+        presentationStyles = Array(presentationStyles.prefix(count))
+    }
+
+    private func append(
+        _ destination: Destination,
+        presentationStyle: NavigationPresentationStyle?
+    ) {
+        stack.append(destination)
+        presentationStyles.append(presentationStyle)
+        runtime?.ownerDidChange()
     }
 }

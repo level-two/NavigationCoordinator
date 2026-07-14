@@ -33,9 +33,9 @@ final class IndependentLegacyViewController: UIViewController {
             self?.coordinator?.show(destination: .review)
         })
         var closeConfiguration = UIButton.Configuration.bordered()
-        closeConfiguration.title = "Close \(style.title)"
+        closeConfiguration.title = "Finish \(style.title)"
         let closeButton = UIButton(configuration: closeConfiguration, primaryAction: UIAction { [weak self] _ in
-            self?.coordinator?.show(destination: .dismiss)
+            self?.coordinator?.finish()
         })
         let stack = UIStackView(arrangedSubviews: [titleLabel, detailLabel, reviewButton, closeButton])
         stack.axis = .vertical

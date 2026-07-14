@@ -16,7 +16,7 @@ struct RoutingOptionsView: View, DestinationView {
                 Button("Full-screen flow") { coordinator.show(destination: .fullScreenFlow) }
             }
             Section("Boundary") {
-                Text("These modal routes are resolved through destinationView(for:) and presented outside the parent stack. Each presentation installs a new NavigationRootController, so its typed stack is independent from the parent demo stack.")
+                Text("Each modal route remains in the parent typed stack as a destination. Its NavigationRootController owns a separate internal stack and finish() removes the presentation destination from the parent.")
                     .foregroundStyle(.secondary)
             }
         }

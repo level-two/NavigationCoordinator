@@ -21,7 +21,7 @@ final class IndependentFlowRootCoordinatorImp: NavigationRootController<Independ
             IndependentLegacyViewController(coordinator: self, style: style)
         case .review:
             IndependentReviewView(coordinator: self, style: style)
-        case .dismiss, .installInfoAndReview, .reset:
+        case .installInfoAndReview, .reset:
             fatalError("Navigation action is not a screen destination.")
         }
     }
@@ -30,8 +30,6 @@ final class IndependentFlowRootCoordinatorImp: NavigationRootController<Independ
         switch destination {
         case .info, .legacy, .review:
             push(destination)
-        case .dismiss:
-            dismiss(animated: true)
         case .installInfoAndReview:
             set(stack: [.info(title: "Installed route"), .review])
         case .reset:

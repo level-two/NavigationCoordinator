@@ -3,11 +3,15 @@ import UIKit
 @MainActor
 open class NavigationRootController<Destination: Hashable>: UINavigationController, NavigationOwner {
     public private(set) var stack: [Destination]
+    private var presentationStyles: [NavigationPresentationStyle?]
     var runtime: NavigationRuntime?
     weak var activeSegment: NavigationSegment?
+    private weak var parentRuntime: NavigationRuntime?
+    private weak var parentEntry: NavigationEntry?
 
     public init(initialStack: [Destination] = []) {
         stack = initialStack
+        presentationStyles = Array(repeating: nil, count: initialStack.count)
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -49,20 +53,31 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
     }
 
     public final func push(_ destination: Destination) {
-        set(stack: stack + [destination])
+        append(destination, presentationStyle: nil)
     }
 
     public final func pop() {
         guard !stack.isEmpty else { return }
-        set(stack: Array(stack.dropLast()))
+        truncateStack(to: stack.count - 1)
+        runtime?.ownerDidChange()
     }
 
     public final func popToRoot() {
         set(stack: [])
     }
 
+    /// Removes this presented navigation tree from its parent coordinator's stack.
+    /// Calling `finish()` on an application root or while detached has no effect.
+    public final func finish() {
+        guard let parentEntry else { return }
+        parentRuntime?.finish(parentEntry)
+    }
+
     public final func replaceTop(with destination: Destination) {
-        set(stack: stack.isEmpty ? [destination] : Array(stack.dropLast()) + [destination])
+        if !stack.isEmpty {
+            truncateStack(to: stack.count - 1)
+        }
+        append(destination, presentationStyle: nil)
     }
 
     public final func sheet(_ destination: Destination) {
@@ -78,16 +93,21 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
     }
 
     public final func present(_ destination: Destination, style: NavigationPresentationStyle) {
-        runtime?.present(destinationView(for: destination), style: style)
+        append(destination, presentationStyle: style)
     }
 
     public final func set(stack newStack: [Destination]) {
         guard stack != newStack else { return }
         stack = newStack
+        presentationStyles = Array(repeating: nil, count: newStack.count)
         runtime?.ownerDidChange()
     }
 
-    var erasedStack: [AnyHashable] { stack.map(AnyHashable.init) }
+    var routes: [NavigationRoute] {
+        zip(stack, presentationStyles).map {
+            NavigationRoute(destination: AnyHashable($0), presentationStyle: $1)
+        }
+    }
 
     func makeLanding() -> any DestinationView {
         landingView()
@@ -99,6 +119,22 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
 
     func truncateStack(to count: Int) {
         stack = Array(stack.prefix(count))
+        presentationStyles = Array(presentationStyles.prefix(count))
+    }
+
+    func attach(to runtime: NavigationRuntime, entry: NavigationEntry) {
+        precondition(
+            parentRuntime == nil && parentEntry == nil,
+            "A NavigationRootController cannot be attached to multiple presentation destinations."
+        )
+        parentRuntime = runtime
+        parentEntry = entry
+    }
+
+    func detach(from entry: NavigationEntry) {
+        guard parentEntry === entry else { return }
+        parentRuntime = nil
+        parentEntry = nil
     }
 
     private var isLeavingHierarchy: Bool {
@@ -122,5 +158,14 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
         runtime?.stop()
         runtime = nil
         setViewControllers([], animated: false)
+    }
+
+    private func append(
+        _ destination: Destination,
+        presentationStyle: NavigationPresentationStyle?
+    ) {
+        stack.append(destination)
+        presentationStyles.append(presentationStyle)
+        runtime?.ownerDidChange()
     }
 }

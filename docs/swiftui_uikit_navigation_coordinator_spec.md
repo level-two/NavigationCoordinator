@@ -1,7 +1,7 @@
 # SwiftUI + UIKit Navigation Coordinator Specification
 
-**Revision:** 4
-**Implementation status:** Initial application slice implemented
+**Revision:** 5
+**Implementation status:** Application slice implemented
 
 ## Revision Notes
 
@@ -26,10 +26,12 @@ This revision makes the runtime contract explicit:
 - A child coordinator may finish its flow by removing the parent destination that
   owns it. This pops the child's landing screen, its entire substack, and any routes
   above it in the flattened UIKit stack.
-- Sheet, overlay, and full-screen presentation use the same destination builder
-  path as push navigation. Coordinators expose presentation helpers that resolve
-  `destinationView(for:)` and present the resulting controller through the active
-  `UINavigationController`.
+- Sheet, overlay, and full-screen presentation destinations are appended to the
+  coordinator's typed stack. The runtime retains their presentation style and
+  derives modal UIKit state from the same logical route tree as push navigation.
+- A `NavigationRootController` used as a presentation destination may call
+  `finish()` to remove its owning destination from the parent stack. Interactive
+  sheet dismissal performs the same parent-stack truncation.
 - A feature-facing coordinator protocol is the preferred dependency injected into
   SwiftUI views and UIKit controllers. That protocol may expose semantic methods
   such as `showDetails(id:)`, `showSettings()`, and `close()`; it does not have to
@@ -56,7 +58,7 @@ The system should support:
 - Predictable visual behavior for pushes, pops, replacements, and hierarchical substacks.
 - User-driven back navigation through UIKit back button and interactive swipe gesture.
 
-The system should not manage alerts, tabs, windows, deep-link routing, app-level flow selection, or declarative modal state retention. Those should be handled independently and may use this navigation system internally when needed.
+The system should not manage alerts, tabs, windows, deep-link routing, app-level flow selection, or modal state outside typed coordinator destinations. Those should be handled independently and may use this navigation system internally when needed.
 
 ---
 
@@ -341,8 +343,10 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView {
 ### 5.5 NavigationRootController
 
 `NavigationRootController` should expose the same stack and presentation API as
-`NavigationCoordinator`, except for child-only `finish()`. It is itself the physical
-`UINavigationController`.
+`NavigationCoordinator`. It is itself the physical `UINavigationController` for
+its navigation tree. When used as a presentation destination, `finish()` removes
+that destination from the parent coordinator's stack; it has no effect on an
+application root or while detached.
 
 ```swift
 @MainActor
@@ -382,6 +386,10 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
         set(stack: [])
     }
 
+    public func finish() {
+        // Remove this presented root's owning destination from its parent stack.
+    }
+
     public func replaceTop(with destination: Destination) {
         guard !stack.isEmpty else {
             set(stack: [destination])
@@ -404,7 +412,7 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
     }
 
     public func present(_ destination: Destination, style: NavigationPresentationStyle) {
-        // Resolve destinationView(for:) and present through the active UINavigationController.
+        // Append destination to stack with its presentation style and reconcile.
     }
 
     public func set(stack newStack: [Destination]) {
@@ -621,13 +629,28 @@ Physical controllers:
 ]
 ```
 
-### 7.2 Destination Equality
+### 7.2 Presentation Destinations
+
+Calling `sheet`, `overlay`, or `fullScreen` appends the supplied destination to
+the same public typed `stack` used by pushed routes. Presentation style is
+retained internally per stack occurrence and does not change the public
+destination type.
+
+The presentation controller is excluded from the parent's physical
+`UINavigationController.viewControllers` array. If it is a
+`NavigationRootController`, that controller owns a separate physical and typed
+stack for its internal flow. Calling its `finish()` removes the presentation
+destination and any routes above it from the parent stack.
+
+User-driven sheet dismissal must synchronize the same logical state change.
+
+### 7.3 Destination Equality
 
 Destination identity is delegated to the feature by requiring `Destination: Hashable`.
 
 The navigation system does not interpret destination internals.
 
-### 7.3 Duplicate Destinations
+### 7.4 Duplicate Destinations
 
 Equal destination values may appear multiple times in the same stack.
 
@@ -653,7 +676,7 @@ struct NavigationStackEntry<Destination: Hashable> {
 }
 ```
 
-### 7.4 Duplicate Preservation Rule
+### 7.5 Duplicate Preservation Rule
 
 When duplicate destinations exist, reconciliation preserves the earliest matching prefix and removes or replaces trailing occurrences first.
 
@@ -1316,15 +1339,16 @@ The first production slice should be implemented in this order:
 7. Add a demo containing SwiftUI destinations, a UIKit destination, duplicate
    routes, stack replacement, multi-route installation, and a nested child flow.
 8. Extend the coordinator API and demo with sheet, overlay, and full-screen
-   presentation helpers that resolve typed destinations through
-   `destinationView(for:)`. Each presented independent flow installs its own
-   `NavigationRootController` to demonstrate independent typed stacks.
+   presentation helpers that retain typed destinations in the parent stack and
+   resolve them through `destinationView(for:)`. Each presented independent flow
+   installs its own `NavigationRootController`, owns an independent internal
+   stack, and finishes by removing its parent presentation destination.
 9. Verify clean compilation and manually exercise back-button and interactive-pop
    behavior.
 
 Deferred from the first slice:
 
-- Modal presentation and app-level root switching (non-goals).
+- App-level root switching (non-goal).
 - Custom transition policies.
 - Public debug inspection APIs.
 - Packaging as a separate framework or Swift package.
