@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build package tests
+        run: |
+          swift build \
+            --build-tests \
+            --scratch-path "$RUNNER_TEMP/NavigationCoordinator-Package" \
+            --triple arm64-apple-ios17.0 \
+            --sdk "$(xcrun --sdk iphoneos --show-sdk-path)"
+
+      - name: Build demo
+        run: |
+          xcodebuild \
+            -workspace NavigationCoordinator.xcworkspace \
+            -scheme NavigationCoordinatorDemo \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/NavigationCoordinator-Demo" \
+            CODE_SIGNING_ALLOWED=NO \
+            build

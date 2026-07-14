@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-PROJECT="$ROOT/NavigationCoordinator.xcodeproj"
-SCHEME="NavigationCoordinator"
+WORKSPACE="$ROOT/NavigationCoordinator.xcworkspace"
+SCHEME="NavigationCoordinatorDemo"
 CONFIGURATION="Debug"
 DESTINATION="generic/platform=iOS"
 DERIVED_DATA="/private/tmp/NavigationCoordinator-DerivedData"
@@ -14,8 +14,8 @@ usage() {
 Usage: build-navigationcoordinator.sh [options] [-- extra xcodebuild args]
 
 Options:
-  --project PATH          Xcode project path. Default: NavigationCoordinator.xcodeproj
-  --scheme NAME          Scheme name. Default: NavigationCoordinator
+  --workspace PATH        Xcode workspace path. Default: NavigationCoordinator.xcworkspace
+  --scheme NAME          Scheme name. Default: NavigationCoordinatorDemo
   --configuration NAME   Build configuration. Default: Debug
   --destination VALUE    xcodebuild destination. Default: generic/platform=iOS
   --derived-data PATH    DerivedData path. Default: /private/tmp/NavigationCoordinator-DerivedData
@@ -25,8 +25,8 @@ USAGE
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --project)
-      PROJECT="$2"
+    --workspace)
+      WORKSPACE="$2"
       shift 2
       ;;
     --scheme)
@@ -62,14 +62,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! -d "$PROJECT" ]]; then
-  echo "error: Xcode project not found at $PROJECT" >&2
+if [[ ! -d "$WORKSPACE" ]]; then
+  echo "error: Xcode workspace not found at $WORKSPACE" >&2
   exit 1
 fi
 
 mkdir -p "$DERIVED_DATA"
 
-echo "Project: $PROJECT"
+echo "Workspace: $WORKSPACE"
 echo "Scheme: $SCHEME"
 echo "Configuration: $CONFIGURATION"
 echo "Destination: $DESTINATION"
@@ -77,7 +77,7 @@ echo "DerivedData: $DERIVED_DATA"
 
 COMMAND=(
   xcodebuild
-  -project "$PROJECT"
+  -workspace "$WORKSPACE"
   -scheme "$SCHEME"
   -configuration "$CONFIGURATION"
   -destination "$DESTINATION"

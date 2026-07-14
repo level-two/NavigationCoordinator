@@ -11,8 +11,8 @@ methods or `show(destination:)`; choose the API the feature actually needs.
 
 ## Inspect First
 
-1. Locate the app root and existing feature conventions in `NavigationCoordinator/App/` and `NavigationCoordinator/Demo/`.
-2. Read `NavigationCoordinator/Coordinators/NavigationCoordinator.swift` and `NavigationRootController.swift` before changing integration code.
+1. Locate the demo app root and existing feature conventions in `Examples/NavigationCoordinatorDemo/NavigationCoordinatorDemo/App/` and `Screens/`.
+2. Read `Sources/NavigationCoordinator/Coordinators/NavigationCoordinator.swift` and `NavigationRootController.swift` before changing integration code.
 3. Preserve existing user changes. Do not wrap `NavigationRootController` in another `UINavigationController`.
 
 ## Select the Flow Boundary
