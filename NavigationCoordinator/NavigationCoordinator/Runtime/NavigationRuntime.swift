@@ -22,10 +22,12 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
     private var rootSegment: NavigationSegment?
     private var transition: Transition = .idle
     private var needsReconciliation = false
+    private var pendingNavigationAnimated: Bool?
     private var controllerLocations: [ObjectIdentifier: ControllerLocation] = [:]
     private weak var managedPresentedController: UIViewController?
     private weak var managedPresentationEntry: NavigationEntry?
     private var presentationTransitionInFlight = false
+    private var pendingPresentationAnimated: Bool?
 
     init(navigationController: UINavigationController, root: any NavigationOwner) {
         self.navigationController = navigationController
@@ -40,7 +42,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         rootSegment = makeSegment(owner: rootOwner, retainsOwner: false)
         rebuildTree()
         navigationController?.setViewControllers(desiredControllers, animated: false)
-        reconcilePresentation()
+        reconcilePresentation(animated: false)
     }
 
     func stop() {
@@ -56,26 +58,26 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         rootOwner = nil
     }
 
-    func ownerDidChange() {
+    func ownerDidChange(animated: Bool) {
         rebuildTree()
-        reconcile()
-        reconcilePresentation()
+        reconcile(animated: animated)
+        reconcilePresentation(animated: animated)
     }
 
-    func finish(_ segment: NavigationSegment) {
+    func finish(_ segment: NavigationSegment, animated: Bool) {
         guard let parent = segment.parent,
               let index = parent.entries.firstIndex(where: { $0.child === segment })
         else { return }
         parent.owner.truncateStack(to: index)
-        ownerDidChange()
+        ownerDidChange(animated: animated)
     }
 
-    func finish(_ entry: NavigationEntry) {
+    func finish(_ entry: NavigationEntry, animated: Bool) {
         guard let segment = entry.segment,
               let index = segment.entries.firstIndex(where: { $0 === entry })
         else { return }
         segment.owner.truncateStack(to: index)
-        ownerDidChange()
+        ownerDidChange(animated: animated)
     }
 
     private var desiredControllers: [UIViewController] {
@@ -181,10 +183,11 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         }
     }
 
-    private func reconcile() {
+    private func reconcile(animated: Bool) {
         guard let navigationController else { return }
         guard case .idle = transition, navigationController.transitionCoordinator == nil else {
             needsReconciliation = true
+            pendingNavigationAnimated = animated
             debugLog("Coalescing reconciliation during an active navigation transition.")
             return
         }
@@ -193,7 +196,10 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         let desired = desiredControllers
         guard !sameInstances(current, desired) else { return }
 
-        if current.isEmpty {
+        if !animated {
+            debugLog(action: "non-animated reconciliation", current: current, desired: desired)
+            navigationController.setViewControllers(desired, animated: false)
+        } else if current.isEmpty {
             debugLog(action: "silent install", current: current, desired: desired)
             navigationController.setViewControllers(desired, animated: false)
         } else if desired.count < current.count,
@@ -231,8 +237,10 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
             needsReconciliation = false
             rebuildTree()
         }
-        reconcile()
-        reconcilePresentation()
+        let animated = pendingNavigationAnimated ?? true
+        pendingNavigationAnimated = nil
+        reconcile(animated: animated)
+        reconcilePresentation(animated: animated)
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
@@ -241,12 +249,16 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         managedPresentedController = nil
         managedPresentationEntry = nil
         if let dismissedEntry {
-            finish(dismissedEntry)
+            finish(dismissedEntry, animated: true)
         }
     }
 
-    private func reconcilePresentation() {
-        guard !presentationTransitionInFlight, let navigationController else { return }
+    private func reconcilePresentation(animated: Bool) {
+        guard !presentationTransitionInFlight else {
+            pendingPresentationAnimated = animated
+            return
+        }
+        guard let navigationController else { return }
 
         let desiredEntry = rootSegment?.lastPresentationEntry
         let desiredController = desiredEntry?.controller
@@ -263,21 +275,23 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
             managedPresentedController = nil
             managedPresentationEntry = nil
             if let dismissedEntry {
-                finish(dismissedEntry)
+                finish(dismissedEntry, animated: animated)
             }
             return
         }
 
         if let currentController {
             presentationTransitionInFlight = true
-            currentController.dismiss(animated: true) { [weak self, weak currentController] in
+            currentController.dismiss(animated: animated) { [weak self, weak currentController] in
                 guard let self else { return }
                 if self.managedPresentedController === currentController {
                     self.managedPresentedController = nil
                     self.managedPresentationEntry = nil
                 }
                 self.presentationTransitionInFlight = false
-                self.reconcilePresentation()
+                let nextAnimated = self.pendingPresentationAnimated ?? animated
+                self.pendingPresentationAnimated = nil
+                self.reconcilePresentation(animated: nextAnimated)
             }
             return
         }
@@ -294,11 +308,13 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         managedPresentedController = desiredController
         managedPresentationEntry = desiredEntry
         presentationTransitionInFlight = true
-        navigationController.present(desiredController, animated: true) { [weak self, weak desiredController] in
+        navigationController.present(desiredController, animated: animated) { [weak self, weak desiredController] in
             guard let self else { return }
             desiredController?.presentationController?.delegate = self
             self.presentationTransitionInFlight = false
-            self.reconcilePresentation()
+            let nextAnimated = self.pendingPresentationAnimated ?? animated
+            self.pendingPresentationAnimated = nil
+            self.reconcilePresentation(animated: nextAnimated)
         }
         desiredController.presentationController?.delegate = self
     }

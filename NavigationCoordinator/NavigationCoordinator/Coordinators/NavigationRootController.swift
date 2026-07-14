@@ -52,55 +52,59 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
         super.willMove(toParent: parent)
     }
 
-    public final func push(_ destination: Destination) {
-        append(destination, presentationStyle: nil)
+    public final func push(_ destination: Destination, animated: Bool = true) {
+        append(destination, presentationStyle: nil, animated: animated)
     }
 
-    public final func pop() {
+    public final func pop(animated: Bool = true) {
         guard !stack.isEmpty else { return }
         truncateStack(to: stack.count - 1)
-        runtime?.ownerDidChange()
+        runtime?.ownerDidChange(animated: animated)
     }
 
-    public final func popToRoot() {
-        set(stack: [])
+    public final func popToRoot(animated: Bool = true) {
+        set(stack: [], animated: animated)
     }
 
     /// Removes this presented navigation tree from its parent coordinator's stack.
     /// Calling `finish()` on an application root or while detached has no effect.
-    public final func finish() {
+    public final func finish(animated: Bool = true) {
         guard let parentEntry else { return }
-        parentRuntime?.finish(parentEntry)
+        parentRuntime?.finish(parentEntry, animated: animated)
     }
 
-    public final func replaceTop(with destination: Destination) {
+    public final func replaceTop(with destination: Destination, animated: Bool = true) {
         if !stack.isEmpty {
             truncateStack(to: stack.count - 1)
         }
-        append(destination, presentationStyle: nil)
+        append(destination, presentationStyle: nil, animated: animated)
     }
 
-    public final func sheet(_ destination: Destination) {
-        present(destination, style: .sheet)
+    public final func sheet(_ destination: Destination, animated: Bool = true) {
+        present(destination, style: .sheet, animated: animated)
     }
 
-    public final func overlay(_ destination: Destination) {
-        present(destination, style: .overlay)
+    public final func overlay(_ destination: Destination, animated: Bool = true) {
+        present(destination, style: .overlay, animated: animated)
     }
 
-    public final func fullScreen(_ destination: Destination) {
-        present(destination, style: .fullScreen)
+    public final func fullScreen(_ destination: Destination, animated: Bool = true) {
+        present(destination, style: .fullScreen, animated: animated)
     }
 
-    public final func present(_ destination: Destination, style: NavigationPresentationStyle) {
-        append(destination, presentationStyle: style)
+    public final func present(
+        _ destination: Destination,
+        style: NavigationPresentationStyle,
+        animated: Bool = true
+    ) {
+        append(destination, presentationStyle: style, animated: animated)
     }
 
-    public final func set(stack newStack: [Destination]) {
+    public final func set(stack newStack: [Destination], animated: Bool = true) {
         guard stack != newStack else { return }
         stack = newStack
         presentationStyles = Array(repeating: nil, count: newStack.count)
-        runtime?.ownerDidChange()
+        runtime?.ownerDidChange(animated: animated)
     }
 
     var routes: [NavigationRoute] {
@@ -162,10 +166,11 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
 
     private func append(
         _ destination: Destination,
-        presentationStyle: NavigationPresentationStyle?
+        presentationStyle: NavigationPresentationStyle?,
+        animated: Bool
     ) {
         stack.append(destination)
         presentationStyles.append(presentationStyle)
-        runtime?.ownerDidChange()
+        runtime?.ownerDidChange(animated: animated)
     }
 }
