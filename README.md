@@ -366,3 +366,7 @@ swift build \
 ```
 
 The package imports UIKit, so its tests are cross-compiled for iOS rather than run as host-side macOS tests with `swift test`.
+
+## License
+
+Available under the MIT License. See [LICENSE](LICENSE).
