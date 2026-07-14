@@ -1,4 +1,4 @@
-enum DemoDestination: Hashable {
+enum DemoDestination: Equatable {
     case details(number: Int)
     case legacy
     case nestedFlow

@@ -6,7 +6,7 @@ final class IndependentFlowRootCoordinatorImp: NavigationRootController<Independ
 
     init(style: IndependentFlowStyle) {
         self.style = style
-        super.init()
+        super.init(areEquivalent: ==)
     }
 
     override func landingView() -> any DestinationView {

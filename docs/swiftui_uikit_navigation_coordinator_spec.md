@@ -1,12 +1,14 @@
 # SwiftUI + UIKit Navigation Coordinator Specification
 
-**Revision:** 5
+**Revision:** 6
 **Implementation status:** Application slice implemented
 
 ## Revision Notes
 
 This revision makes the runtime contract explicit:
 
+- `Destination` is unconstrained. Each concrete coordinator supplies an
+  `areEquivalent` closure that defines stack equality and controller reuse.
 - Controller identity is positional. An unchanged destination in the longest common
   prefix keeps the same controller (or child coordinator) instance.
 - Heterogeneous coordinators are represented internally by a main-actor-isolated,
@@ -53,7 +55,7 @@ The system should support:
 - Existing UIKit `UIViewController` screens.
 - Nested feature flows represented by child `NavigationCoordinator`s.
 - Sheet, overlay, and full-screen presentation of typed destinations.
-- Declarative stack updates through arrays of `Hashable` destinations.
+- Declarative stack updates through typed destination arrays.
 - Diffed reconciliation between desired logical state and UIKit's physical navigation stack.
 - Predictable visual behavior for pushes, pops, replacements, and hierarchical substacks.
 - User-driven back navigation through UIKit back button and interactive swipe gesture.
@@ -136,12 +138,14 @@ Important:
 
 ### Destination
 
-A `Hashable` value representing a route inside one coordinator's flow.
+A typed value representing a route inside one coordinator's flow. `Destination`
+has no protocol constraint; the concrete coordinator supplies destination
+equivalence when it initializes its superclass.
 
 Example:
 
 ```swift
-enum Destination: Hashable {
+enum Destination: Equatable {
     case details(id: Int)
     case settings
     case checkout
@@ -286,11 +290,16 @@ When a coordinator is returned as a destination, it must be attached as a logica
 
 ```swift
 @MainActor
-open class NavigationCoordinator<Destination: Hashable>: DestinationView {
+open class NavigationCoordinator<Destination>: DestinationView {
     public private(set) var stack: [Destination]
+    private let areEquivalent: (Destination, Destination) -> Bool
 
-    public init(initialStack: [Destination] = []) {
+    public init(
+        initialStack: [Destination] = [],
+        areEquivalent: @escaping (Destination, Destination) -> Bool
+    ) {
         self.stack = initialStack
+        self.areEquivalent = areEquivalent
     }
 
     open func landingView() -> any DestinationView {
@@ -338,6 +347,12 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView {
         // If unattached, store as pending initial state.
     }
 }
+
+public extension NavigationCoordinator where Destination: Equatable {
+    convenience init(initialStack: [Destination] = []) {
+        self.init(initialStack: initialStack, areEquivalent: ==)
+    }
+}
 ```
 
 ### 5.5 NavigationRootController
@@ -350,13 +365,18 @@ application root or while detached.
 
 ```swift
 @MainActor
-open class NavigationRootController<Destination: Hashable>: UINavigationController {
+open class NavigationRootController<Destination>: UINavigationController {
     public private(set) var stack: [Destination]
+    private let areEquivalent: (Destination, Destination) -> Bool
 
     private var runtime: NavigationRuntime?
 
-    public init(initialStack: [Destination] = []) {
+    public init(
+        initialStack: [Destination] = [],
+        areEquivalent: @escaping (Destination, Destination) -> Bool
+    ) {
         self.stack = initialStack
+        self.areEquivalent = areEquivalent
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -420,6 +440,12 @@ open class NavigationRootController<Destination: Hashable>: UINavigationControll
         // Ask runtime to reconcile.
     }
 }
+
+public extension NavigationRootController where Destination: Equatable {
+    convenience init(initialStack: [Destination] = []) {
+        self.init(initialStack: initialStack, areEquivalent: ==)
+    }
+}
 ```
 
 ### 5.6 Feature-Facing Coordinator Protocols
@@ -441,7 +467,7 @@ protocol ProfileCoordinating: AnyObject {
     func close()
 }
 
-private enum ProfileRoute: Hashable {
+private enum ProfileRoute: Equatable {
     case account(UUID)
     case privacy
 }
@@ -451,6 +477,10 @@ final class ProfileCoordinator:
     NavigationCoordinator<ProfileRoute>,
     ProfileCoordinating
 {
+    init(initialStack: [ProfileRoute] = []) {
+        super.init(initialStack: initialStack, areEquivalent: ==)
+    }
+
     override func landingView() -> any DestinationView {
         ProfileHomeView(coordinator: self)
     }
@@ -499,10 +529,14 @@ final class Feature1NavigationCoordinator:
     NavigationCoordinator<Feature1NavigationCoordinator.Destination>,
     Feature1FlowCoordinator
 {
-    enum Destination: Hashable {
+    enum Destination: Equatable {
         case details(id: Int)
         case legacy
         case checkout
+    }
+
+    init(initialStack: [Destination] = []) {
+        super.init(initialStack: initialStack, areEquivalent: ==)
     }
 
     override func landingView() -> any DestinationView {
@@ -547,11 +581,15 @@ final class Feature1NavigationCoordinator:
 final class AppNavigationRootController:
     NavigationRootController<AppNavigationRootController.Destination>
 {
-    enum Destination: Hashable {
+    enum Destination: Equatable {
         case puzzleList
         case puzzleDetails(id: UUID)
         case printerSettings
         case printFlow
+    }
+
+    init(initialStack: [Destination] = []) {
+        super.init(initialStack: initialStack, areEquivalent: ==)
     }
 
     override func landingView() -> any DestinationView {
@@ -646,13 +684,40 @@ User-driven sheet dismissal must synchronize the same logical state change.
 
 ### 7.3 Destination Equality
 
-Destination identity is delegated to the feature by requiring `Destination: Hashable`.
+Destination equivalence is delegated to the feature through the `areEquivalent`
+closure passed to the coordinator superclass initializer. The destination type
+itself is unconstrained.
+
+For an `Equatable` destination, pass `==`:
+
+```swift
+super.init(initialStack: initialStack, areEquivalent: ==)
+```
+
+The base types also provide this policy through a constrained convenience
+initializer when `Destination: Equatable`.
+
+For an unconstrained destination, compare the route discriminator and every
+payload value that changes the content built by `destinationView(for:)`:
+
+```swift
+super.init(
+    areEquivalent: { lhs, rhs in
+        lhs.screenID == rhs.screenID && lhs.revision == rhs.revision
+    }
+)
+```
+
+The closure must be reflexive, symmetric, and transitive. Returning `true`
+allows the runtime to retain the existing controller or child coordinator at
+that stack position, so values omitted from the comparison must not require
+rebuilt content.
 
 The navigation system does not interpret destination internals.
 
 ### 7.4 Duplicate Destinations
 
-Equal destination values may appear multiple times in the same stack.
+Equivalent destination values may appear multiple times in the same stack.
 
 Example:
 
@@ -669,7 +734,7 @@ The runtime must not store controllers using only `Destination` as a unique dict
 Internally, each stack occurrence should have its own identity:
 
 ```swift
-struct NavigationStackEntry<Destination: Hashable> {
+struct NavigationStackEntry<Destination> {
     let destination: Destination
     let occurrenceID: UUID
     let viewController: UIViewController
@@ -729,7 +794,7 @@ A child can mutate only the substack inside that child flow.
 Preferred style:
 
 ```swift
-enum ParentDestination: Hashable {
+enum ParentDestination: Equatable {
     case checkout
 }
 ```
@@ -737,7 +802,7 @@ enum ParentDestination: Hashable {
 The child owns its own internal destination enum:
 
 ```swift
-enum CheckoutDestination: Hashable {
+enum CheckoutDestination: Equatable {
     case address
     case payment
     case summary
@@ -747,7 +812,7 @@ enum CheckoutDestination: Hashable {
 If a parent needs to initialize a child with a predefined stack, pass that as child coordinator configuration:
 
 ```swift
-enum ParentDestination: Hashable {
+enum ParentDestination: Equatable {
     case checkout(initialStack: [CheckoutDestination])
 }
 ```
@@ -778,7 +843,7 @@ enum NavigationNode {
 struct ScreenNode {
     let id: UUID
     let ownerID: NavigationOwnerID
-    let destination: AnyHashable?
+    let destination: AnyNavigationDestination?
     let viewController: UIViewController
 }
 
@@ -1126,7 +1191,9 @@ Runtime removes the child-flow destination from the parent stack.
 
 ## 13. Destination Payload Guidelines
 
-Because `Destination` must be `Hashable`, payloads should also be hashable.
+`Destination` is unconstrained, so payloads do not need to conform to
+`Hashable` or `Equatable`. The coordinator's `areEquivalent` closure must still
+give every routable value stable, content-aware comparison semantics.
 
 Good examples:
 
@@ -1136,13 +1203,20 @@ case editor(draftID: UUID)
 case result(summary: ResultSummary)
 ```
 
-Avoid putting heavy mutable or reference-like objects directly into destinations:
+Non-hashable payloads are supported:
 
 ```swift
-case details(viewModel: DetailsViewModel)      // usually avoid
-case custom(action: () -> Void)                // invalid for Hashable
-case controller(UIViewController)             // avoid
+case custom(id: UUID, action: () -> Void)
 ```
+
+The comparator for this case should compare `id` and any revision that requires
+the screen to be rebuilt. If a replacement action is expected to affect an
+already-built screen, it must be represented in that equivalence policy or
+delivered through shared mutable state.
+
+Heavy mutable or reference-like payloads such as view models and controllers
+are legal, but should still be used deliberately because destinations are
+retained as logical navigation state.
 
 Destinations should generally be value-like route descriptions.
 
@@ -1154,7 +1228,8 @@ Heavy state should live in:
 - Flow-scoped dependencies.
 - Coordinator-owned caches.
 
-If complex data is needed, prefer a hashable token or ID and resolve the actual object during view construction.
+When practical, prefer a stable token or ID and resolve the actual object during
+view construction.
 
 ---
 
@@ -1384,7 +1459,7 @@ user-driven pop mapping
 
 The system provides a UIKit-backed, declarative, hierarchical navigation architecture.
 
-A `NavigationRootController` is the one physical `UINavigationController`. Feature flows are implemented as typed `NavigationCoordinator<Destination>` subclasses. Each coordinator owns a `Destination: Hashable` stack and provides two builders:
+A `NavigationRootController` is the one physical `UINavigationController`. Feature flows are implemented as typed `NavigationCoordinator<Destination>` subclasses. Each coordinator owns an unconstrained typed destination stack, supplies an `areEquivalent` policy, and provides two builders:
 
 ```swift
 landingView() -> any DestinationView

@@ -2,6 +2,23 @@ import SwiftUI
 
 @MainActor
 final class CheckoutCoordinatorImp: NavigationCoordinator<CheckoutDestination>, CheckoutCoordinator {
+    init(initialStack: [CheckoutDestination] = []) {
+        super.init(
+            initialStack: initialStack,
+            areEquivalent: { lhs, rhs in
+                switch (lhs, rhs) {
+                case (.address, .address),
+                     (.payment, .payment),
+                     (.confirmation, .confirmation),
+                     (.restart, .restart):
+                    true
+                default:
+                    false
+                }
+            }
+        )
+    }
+
     override func landingView() -> any DestinationView {
         CheckoutLandingView(coordinator: self)
     }

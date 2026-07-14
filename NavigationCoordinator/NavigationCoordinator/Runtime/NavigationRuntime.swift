@@ -126,14 +126,16 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         let desired = segment.owner.routes
         var prefix = 0
         while prefix < min(desired.count, segment.entries.count),
-              desired[prefix].destination == segment.entries[prefix].destination,
+              desired[prefix].destination.isEquivalent(
+                  to: segment.entries[prefix].destination
+              ),
               desired[prefix].presentationStyle == segment.entries[prefix].presentationStyle {
             prefix += 1
         }
 
         let preservedTopEntry: NavigationEntry?
         if prefix < desired.count,
-           desired.last?.destination == segment.entries.last?.destination,
+           destinationsAreEquivalent(desired.last, segment.entries.last),
            desired.last?.presentationStyle == segment.entries.last?.presentationStyle {
             preservedTopEntry = segment.entries.last
         } else {
@@ -404,6 +406,14 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
 
     private func sameInstances(_ lhs: [UIViewController], _ rhs: [UIViewController]) -> Bool {
         lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0 === $1 }
+    }
+
+    private func destinationsAreEquivalent(
+        _ route: NavigationRoute?,
+        _ entry: NavigationEntry?
+    ) -> Bool {
+        guard let route, let entry else { return false }
+        return route.destination.isEquivalent(to: entry.destination)
     }
 
     private func debugLog(

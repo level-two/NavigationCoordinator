@@ -1,4 +1,4 @@
-enum CheckoutDestination: Hashable {
+enum CheckoutDestination {
     case address
     case payment
     case confirmation

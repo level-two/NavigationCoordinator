@@ -2,6 +2,10 @@ import UIKit
 
 @MainActor
 final class DemoNavigationCoordinatorImp: NavigationRootController<DemoDestination>, DemoNavigationCoordinator {
+    init(initialStack: [DemoDestination] = []) {
+        super.init(initialStack: initialStack, areEquivalent: ==)
+    }
+
     override func landingView() -> any DestinationView {
         DemoHomeView(coordinator: self)
     }

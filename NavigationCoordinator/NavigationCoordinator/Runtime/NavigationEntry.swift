@@ -2,14 +2,14 @@ import UIKit
 
 @MainActor
 final class NavigationEntry {
-    let destination: AnyHashable
+    let destination: AnyNavigationDestination
     let presentationStyle: NavigationPresentationStyle?
     let controller: UIViewController?
     let child: NavigationSegment?
     weak var segment: NavigationSegment?
 
     init(
-        destination: AnyHashable,
+        destination: AnyNavigationDestination,
         presentationStyle: NavigationPresentationStyle?,
         controller: UIViewController
     ) {
@@ -19,7 +19,7 @@ final class NavigationEntry {
         child = nil
     }
 
-    init(destination: AnyHashable, child: NavigationSegment) {
+    init(destination: AnyNavigationDestination, child: NavigationSegment) {
         self.destination = destination
         presentationStyle = nil
         controller = nil

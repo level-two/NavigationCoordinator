@@ -1,4 +1,4 @@
-enum IndependentDestination: Hashable {
+enum IndependentDestination: Equatable {
     case info(title: String)
     case legacy
     case review

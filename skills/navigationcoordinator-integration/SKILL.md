@@ -20,7 +20,7 @@ methods or `show(destination:)`; choose the API the feature actually needs.
 - Subclass `NavigationRootController<Destination>` for an app root or a flow that owns a separate navigation tree (sheet, overlay, or full-screen presentation).
 - Subclass `NavigationCoordinator<Destination>` for a child flow that must flatten into its parent's physical navigation stack.
 - Return a child coordinator from the parent's `destinationView(for:)`; do not create a nested `UINavigationController` for that case.
-- Keep `Destination: Hashable` value-like. Use route IDs and configuration, not view models or controllers.
+- Keep `Destination` route-like and define explicit equivalence for controller reuse. Non-hashable payloads are supported, but values omitted from equivalence must not require rebuilt content.
 
 ## Define the Screen-Facing Contract
 
@@ -59,11 +59,12 @@ additional feature logic without exposing an enum.
 
 ## Implement the Concrete Coordinator
 
-1. Define the concrete coordinator's `Destination: Hashable` enum.
-2. Override `landingView()` and `destinationView(for:)`.
-3. Return SwiftUI `DestinationView`s, UIKit controllers, or child coordinators from the destination builder.
-4. Conform the concrete coordinator to the screen-facing protocol and implement its methods through `push`, `pop`, `popToRoot`, `replaceTop`, `set(stack:)`, `sheet`, `overlay`, or `fullScreen`.
-5. Pass `self` to screens as the protocol existential.
+1. Define the concrete coordinator's unconstrained `Destination` type.
+2. Initialize the superclass with an `areEquivalent` closure. Pass `==` for an `Equatable` destination (or use the inherited convenience initializer when available); otherwise compare every value that changes built content.
+3. Override `landingView()` and `destinationView(for:)`.
+4. Return SwiftUI `DestinationView`s, UIKit controllers, or child coordinators from the destination builder.
+5. Conform the concrete coordinator to the screen-facing protocol and implement its methods through `push`, `pop`, `popToRoot`, `replaceTop`, `set(stack:)`, `sheet`, `overlay`, or `fullScreen`.
+6. Pass `self` to screens as the protocol existential.
 
 Treat presentation as a boundary: use a new `NavigationRootController` for a
 separate modal tree. The sheet, overlay, or full-screen destination remains in

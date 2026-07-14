@@ -1,15 +1,25 @@
 import UIKit
 
 @MainActor
-open class NavigationCoordinator<Destination: Hashable>: DestinationView, NavigationOwner {
+open class NavigationCoordinator<Destination>: DestinationView, NavigationOwner {
     public private(set) var stack: [Destination]
     private var presentationStyles: [NavigationPresentationStyle?]
+    private let areEquivalent: (Destination, Destination) -> Bool
     weak var runtime: NavigationRuntime?
     weak var activeSegment: NavigationSegment?
 
-    public init(initialStack: [Destination] = []) {
+    /// Creates a coordinator with feature-defined destination equivalence.
+    ///
+    /// Equivalent destinations at the same stack position reuse their existing
+    /// view controller or child coordinator. The closure must define an
+    /// equivalence relation and include every value that changes built content.
+    public init(
+        initialStack: [Destination] = [],
+        areEquivalent: @escaping (Destination, Destination) -> Bool
+    ) {
         stack = initialStack
         presentationStyles = Array(repeating: nil, count: initialStack.count)
+        self.areEquivalent = areEquivalent
     }
 
     open func landingView() -> any DestinationView {
@@ -71,7 +81,7 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
     }
 
     public final func set(stack newStack: [Destination], animated: Bool = true) {
-        guard stack != newStack else { return }
+        guard !stacksAreEquivalent(stack, newStack) else { return }
         stack = newStack
         presentationStyles = Array(repeating: nil, count: newStack.count)
         runtime?.ownerDidChange(animated: animated)
@@ -83,7 +93,13 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
 
     var routes: [NavigationRoute] {
         zip(stack, presentationStyles).map {
-            NavigationRoute(destination: AnyHashable($0), presentationStyle: $1)
+            NavigationRoute(
+                destination: AnyNavigationDestination(
+                    $0,
+                    areEquivalent: areEquivalent
+                ),
+                presentationStyle: $1
+            )
         }
     }
 
@@ -108,5 +124,17 @@ open class NavigationCoordinator<Destination: Hashable>: DestinationView, Naviga
         stack.append(destination)
         presentationStyles.append(presentationStyle)
         runtime?.ownerDidChange(animated: animated)
+    }
+
+    private func stacksAreEquivalent(_ lhs: [Destination], _ rhs: [Destination]) -> Bool {
+        lhs.count == rhs.count && zip(lhs, rhs).allSatisfy {
+            areEquivalent($0.0, $0.1)
+        }
+    }
+}
+
+public extension NavigationCoordinator where Destination: Equatable {
+    convenience init(initialStack: [Destination] = []) {
+        self.init(initialStack: initialStack, areEquivalent: ==)
     }
 }
