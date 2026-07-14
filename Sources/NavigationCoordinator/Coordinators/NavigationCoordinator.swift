@@ -22,6 +22,12 @@ open class NavigationCoordinator<Destination>: DestinationView, NavigationOwner 
         self.areEquivalent = areEquivalent
     }
 
+    public init(initialStack: [Destination] = []) where Destination: Equatable {
+        stack = initialStack
+        presentationStyles = Array(repeating: nil, count: initialStack.count)
+        areEquivalent = { $0 == $1 }
+    }
+
     open func landingView() -> any DestinationView {
         fatalError("Subclasses must override landingView()")
     }
@@ -130,11 +136,5 @@ open class NavigationCoordinator<Destination>: DestinationView, NavigationOwner 
         lhs.count == rhs.count && zip(lhs, rhs).allSatisfy {
             areEquivalent($0.0, $0.1)
         }
-    }
-}
-
-public extension NavigationCoordinator where Destination: Equatable {
-    convenience init(initialStack: [Destination] = []) {
-        self.init(initialStack: initialStack, areEquivalent: ==)
     }
 }

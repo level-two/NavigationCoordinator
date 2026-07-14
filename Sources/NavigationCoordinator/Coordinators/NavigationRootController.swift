@@ -25,6 +25,13 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
         super.init(nibName: nil, bundle: nil)
     }
 
+    public init(initialStack: [Destination] = []) where Destination: Equatable {
+        stack = initialStack
+        presentationStyles = Array(repeating: nil, count: initialStack.count)
+        areEquivalent = { $0 == $1 }
+        super.init(nibName: nil, bundle: nil)
+    }
+
     @available(*, unavailable)
     public required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -194,11 +201,5 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
         lhs.count == rhs.count && zip(lhs, rhs).allSatisfy {
             areEquivalent($0.0, $0.1)
         }
-    }
-}
-
-public extension NavigationRootController where Destination: Equatable {
-    convenience init(initialStack: [Destination] = []) {
-        self.init(initialStack: initialStack, areEquivalent: ==)
     }
 }
