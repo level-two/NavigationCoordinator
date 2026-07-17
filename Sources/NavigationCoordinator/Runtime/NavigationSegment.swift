@@ -4,7 +4,6 @@ import UIKit
 final class NavigationSegment {
     private weak var weakOwner: (any NavigationOwner)?
     private var retainedOwner: (any NavigationOwner)?
-    let landingController: UIViewController
     weak var parent: NavigationSegment?
     var entries: [NavigationEntry] = []
 
@@ -18,7 +17,6 @@ final class NavigationSegment {
 
     init(
         owner: any NavigationOwner,
-        landingController: UIViewController,
         parent: NavigationSegment? = nil,
         retainsOwner: Bool = true
     ) {
@@ -28,13 +26,12 @@ final class NavigationSegment {
         )
         weakOwner = owner
         retainedOwner = retainsOwner ? owner : nil
-        self.landingController = landingController
         self.parent = parent
         owner.activeSegment = self
     }
 
     var flattened: [UIViewController] {
-        [landingController] + entries.flatMap { entry in
+        entries.flatMap { entry in
             if let child = entry.child { return child.flattened }
             guard entry.presentationStyle == nil else { return [] }
             return entry.controller.map { [$0] } ?? []

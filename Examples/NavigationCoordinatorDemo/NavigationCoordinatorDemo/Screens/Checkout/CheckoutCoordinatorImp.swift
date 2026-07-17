@@ -3,12 +3,14 @@ import SwiftUI
 
 @MainActor
 final class CheckoutCoordinatorImp: NavigationCoordinator<CheckoutDestination>, CheckoutCoordinator {
-    init(initialStack: [CheckoutDestination] = []) {
+    override init(initial: CheckoutDestination, rest: [CheckoutDestination] = []) {
         super.init(
-            initialStack: initialStack,
+            initial: initial,
+            rest: rest,
             areEquivalent: { lhs, rhs in
                 switch (lhs, rhs) {
-                case (.address, .address),
+                case (.start, .start),
+                     (.address, .address),
                      (.payment, .payment),
                      (.confirmation, .confirmation),
                      (.restart, .restart):
@@ -20,12 +22,10 @@ final class CheckoutCoordinatorImp: NavigationCoordinator<CheckoutDestination>, 
         )
     }
 
-    override func landingView() -> any DestinationView {
-        CheckoutLandingView(coordinator: self)
-    }
-
     override func destinationView(for destination: CheckoutDestination) -> any DestinationView {
         switch destination {
+        case .start:
+            CheckoutStartView(coordinator: self)
         case .address, .payment, .confirmation:
             CheckoutStepView(destination: destination, coordinator: self)
         case .restart:
@@ -38,6 +38,8 @@ final class CheckoutCoordinatorImp: NavigationCoordinator<CheckoutDestination>, 
         case .address, .payment, .confirmation:
             push(destination)
         case .restart:
+            popToRoot()
+        case .start:
             popToRoot()
         }
     }

@@ -1,7 +1,7 @@
 import NavigationCoordinator
 import SwiftUI
 
-struct IndependentLandingView: View, DestinationView {
+struct IndependentStartView: View, DestinationView {
     let coordinator: any IndependentFlowRootCoordinator
     let style: IndependentFlowStyle
 

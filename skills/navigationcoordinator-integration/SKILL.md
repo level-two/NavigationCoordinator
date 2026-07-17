@@ -60,11 +60,15 @@ additional feature logic without exposing an enum.
 ## Implement the Concrete Coordinator
 
 1. Define the concrete coordinator's unconstrained `Destination` type.
-2. Initialize the superclass with an `areEquivalent` closure. Pass `==` for an `Equatable` destination (or use the inherited convenience initializer when available); otherwise compare every value that changes built content.
-3. Override `landingView()` and `destinationView(for:)`.
-4. Return SwiftUI `DestinationView`s, UIKit controllers, or child coordinators from the destination builder.
+2. Give the flow an explicit initial destination and initialize the superclass with `initial:rest:areEquivalent:`. Pass `==` for an `Equatable` destination; otherwise compare every value that changes built content.
+3. Override `destinationView(for:)`, including the initial destination.
+4. Return SwiftUI `DestinationView`s, UIKit controllers, or child coordinators from the destination builder. The initial destination must build a SwiftUI or UIKit controller rather than another child coordinator.
 5. Conform the concrete coordinator to the screen-facing protocol and implement its methods through `push`, `pop`, `popToRoot`, `replaceTop`, `set(stack:)`, `sheet`, `overlay`, or `fullScreen`.
 6. Pass `self` to screens as the protocol existential.
+
+Active stacks are non-empty. `popToRoot()` retains the initial destination. A
+final `pop()` or an empty `set(stack:)` finishes an attached child or presented
+flow; an application root retains its initial destination.
 
 Treat presentation as a boundary: use a new `NavigationRootController` for a
 separate modal tree. The sheet, overlay, or full-screen destination remains in

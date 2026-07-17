@@ -90,11 +90,8 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         retainsOwner: Bool = true
     ) -> NavigationSegment {
         owner.runtime = self
-        let landing = makeContent(owner.makeLanding())
-        precondition(landing.child == nil, "A coordinator landing view cannot be another coordinator.")
         return NavigationSegment(
             owner: owner,
-            landingController: landing.controller!,
             parent: parent,
             retainsOwner: retainsOwner
         )
@@ -124,6 +121,10 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
 
     private func rebuild(_ segment: NavigationSegment) {
         let desired = segment.owner.routes
+        precondition(
+            !desired.isEmpty,
+            "An active navigation coordinator must have at least one destination."
+        )
         var prefix = 0
         while prefix < min(desired.count, segment.entries.count),
               desired[prefix].destination.isEquivalent(
@@ -160,6 +161,10 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
             let content = makeContent(segment.owner.makeDestination(at: index), parent: segment)
             let entry: NavigationEntry
             if let child = content.child {
+                precondition(
+                    index > 0,
+                    "A coordinator's initial destination cannot be another NavigationCoordinator."
+                )
                 precondition(
                     route.presentationStyle == nil,
                     "Present a NavigationRootController for modal navigation. NavigationCoordinator is reserved for stack destinations."
@@ -343,7 +348,7 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
             return
         }
         guard let visibleTop = visible.last else {
-            debugLog("UIKit removed the root landing controller; logical ownership cannot be retained.")
+            debugLog("UIKit removed the initial root destination; logical ownership cannot be retained.")
             return
         }
         guard let location = controllerLocations[ObjectIdentifier(visibleTop)] else {
@@ -373,14 +378,6 @@ final class NavigationRuntime: NSObject, UINavigationControllerDelegate, UIAdapt
         ancestorPath: [NavigationPathComponent],
         locations: inout [ObjectIdentifier: ControllerLocation]
     ) {
-        register(
-            segment.landingController,
-            at: ancestorPath + [
-                NavigationPathComponent(segment: segment, retainedDestinationCount: 0)
-            ],
-            locations: &locations
-        )
-
         for (index, entry) in segment.entries.enumerated() {
             let path = ancestorPath + [
                 NavigationPathComponent(segment: segment, retainedDestinationCount: index + 1)

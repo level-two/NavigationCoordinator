@@ -7,7 +7,7 @@
 1. Add the package and import `NavigationCoordinator`.
 2. Describe a flow with a destination type.
 3. Subclass `NavigationRootController` for the app's navigation root.
-4. Return SwiftUI views, UIKit view controllers, or child coordinators from the two builder methods.
+4. Initialize it with its first destination and build each destination as SwiftUI, UIKit, or a child coordinator.
 5. Call `push`, `pop`, `set(stack:)`, or a presentation method to update navigation.
 
 ```swift
@@ -16,24 +16,23 @@ import SwiftUI
 import UIKit
 
 enum AppDestination: Equatable {
+    case home
     case details(id: Int)
     case settings
 }
 
 @MainActor
 final class AppCoordinator: NavigationRootController<AppDestination> {
-    init(initialStack: [AppDestination] = []) {
-        super.init(initialStack: initialStack, areEquivalent: ==)
-    }
-
-    override func landingView() -> any DestinationView {
-        HomeView(showDetails: { [weak self] id in
-            self?.push(.details(id: id))
-        })
+    init(restoredPath: [AppDestination] = []) {
+        super.init(initial: .home, rest: restoredPath, areEquivalent: ==)
     }
 
     override func destinationView(for destination: AppDestination) -> any DestinationView {
         switch destination {
+        case .home:
+            HomeView(showDetails: { [weak self] id in
+                self?.push(.details(id: id))
+            })
         case .details(let id):
             DetailsView(id: id)
         case .settings:
@@ -106,7 +105,15 @@ Each coordinator owns a typed destination array:
 public private(set) var stack: [Destination]
 ```
 
-The landing screen is always present and is not part of that array. Every destination in `stack` is built by `destinationView(for:)`. The runtime converts the resulting logical tree into UIKit controllers and keeps it synchronized with user-driven back navigation.
+The array is always non-empty while the flow is active. Its first element is the flow's root screen, and every element is built by `destinationView(for:)`. The runtime converts the resulting logical tree into UIKit controllers and keeps it synchronized with user-driven back navigation.
+
+Base initializers require the first destination explicitly:
+
+```swift
+super.init(initial: .home, rest: restoredPath, areEquivalent: ==)
+```
+
+Using a separate `initial` argument makes an empty initial stack impossible. A segment's initial destination must build a SwiftUI or UIKit controller rather than another `NavigationCoordinator`.
 
 Use the two coordinator base classes for different jobs:
 
@@ -140,6 +147,8 @@ struct ProfileView: View, DestinationView {
 ```swift
 override func destinationView(for destination: AppDestination) -> any DestinationView {
     switch destination {
+    case .home:
+        HomeView(showDetails: { _ in })
     case .settings:
         SettingsViewController()
     case .details(let id):
@@ -193,13 +202,13 @@ push(.details(id: 42))
 pop()
 popToRoot()
 replaceTop(with: .settings)
-set(stack: [.details(id: 42), .settings])
+set(stack: [.home, .details(id: 42), .settings])
 ```
 
 Every method accepts `animated: Bool`, which defaults to `true`:
 
 ```swift
-set(stack: restoredPath, animated: false)
+set(stack: restoredStack, animated: false)
 ```
 
 Operation behavior:
@@ -207,13 +216,15 @@ Operation behavior:
 | Operation | Result |
 | --- | --- |
 | `push(destination)` | Appends one pushed destination |
-| `pop()` | Removes the coordinator's last destination; does nothing at its landing screen |
-| `popToRoot()` | Clears this coordinator's destination stack |
-| `replaceTop(with:)` | Replaces the last destination, or pushes when the stack is empty |
-| `set(stack:)` | Installs a complete pushed stack, useful for restoration and deep-link results |
+| `pop()` | Removes the last destination; at a child flow's initial destination, finishes that flow |
+| `popToRoot()` | Retains only the initial destination |
+| `replaceTop(with:)` | Replaces the last destination while keeping the stack non-empty |
+| `set(stack:)` | Installs a complete non-empty stack, useful for restoration and deep-link results |
 | `finish()` | Removes this entire child flow from its parent |
 
 `stack` changes synchronously when an operation is called. During an active UIKit transition, visual reconciliation is coalesced to the latest requested state.
+
+Passing an empty array to `set(stack:)` finishes an attached child or presented flow. An application root and a detached coordinator have nowhere to finish, so they reject the empty request and retain their initial destination.
 
 ## Nested flows
 
@@ -221,20 +232,19 @@ Use `NavigationCoordinator` when a child feature should continue on the same bac
 
 ```swift
 enum CheckoutDestination: Equatable {
+    case start
     case address
     case payment
 }
 
 @MainActor
 final class CheckoutCoordinator: NavigationCoordinator<CheckoutDestination> {
-    override func landingView() -> any DestinationView {
-        CheckoutStartView(coordinator: self)
-    }
-
     override func destinationView(
         for destination: CheckoutDestination
     ) -> any DestinationView {
         switch destination {
+        case .start:
+            CheckoutStartView(coordinator: self)
         case .address:
             AddressView(coordinator: self)
         case .payment:
@@ -252,13 +262,13 @@ enum AppDestination: Equatable {
 override func destinationView(for destination: AppDestination) -> any DestinationView {
     switch destination {
     case .checkout:
-        CheckoutCoordinator()
+        CheckoutCoordinator(initial: .start)
     // Other destinations...
     }
 }
 ```
 
-The child landing screen and its destinations are flattened into the parent's `UINavigationController`. Calling `finish()` on the child removes its landing screen, its substack, and any routes above that child from the parent stack.
+The child's complete destination stack is flattened into the parent's `UINavigationController`. Calling `finish()` on the child removes its substack and any routes above that child from the parent stack. Popping the child's final destination has the same effect.
 
 A coordinator instance can occupy only one active navigation location. Create a new child instance each time the destination is built instead of sharing an active instance between routes.
 
@@ -290,16 +300,21 @@ enum AppDestination: Equatable {
     case accountFlow
 }
 
+enum AccountDestination: Equatable {
+    case overview
+    case security
+}
+
 @MainActor
 final class AccountCoordinator: NavigationRootController<AccountDestination> {
-    // Implement landingView() and destinationView(for:).
+    // Implement destinationView(for:).
 }
 
 // In the parent coordinator:
 override func destinationView(for destination: AppDestination) -> any DestinationView {
     switch destination {
     case .accountFlow:
-        AccountCoordinator()
+        AccountCoordinator(initial: .overview)
     }
 }
 
@@ -315,15 +330,15 @@ Calling `finish()` inside a presented `NavigationRootController` removes the pre
 For an `Equatable` destination, pass `==` from the concrete subclass initializer:
 
 ```swift
-init(initialStack: [AppDestination] = []) {
-    super.init(initialStack: initialStack, areEquivalent: ==)
+init(restoredPath: [AppDestination] = []) {
+    super.init(initial: .home, rest: restoredPath, areEquivalent: ==)
 }
 ```
 
 For a non-`Equatable` destination, or when route identity needs custom rules, provide `areEquivalent`:
 
 ```swift
-super.init(initialStack: initialStack) { lhs, rhs in
+super.init(initial: initial, rest: restoredPath) { lhs, rhs in
     switch (lhs, rhs) {
     case let (.article(lhsID, _), .article(rhsID, _)):
         lhsID == rhsID
@@ -341,12 +356,13 @@ Duplicate equivalent values are supported because reuse is positional, not set-b
 
 ## Lifecycle and behavior notes
 
-- `NavigationRootController` installs its runtime when its view loads or appears. An `initialStack` is installed without animation.
+- `NavigationRootController` installs its runtime when its view loads or appears. Its initial destination and restored path are installed without animation.
 - Destination builders run for newly added or replaced entries; unchanged equivalent entries retain controller identity.
 - UIKit back-button and completed swipe-back actions truncate the appropriate typed stack, including across child-flow boundaries.
 - A cancelled interactive pop leaves logical state unchanged.
+- Active stacks stay non-empty. Popping the final destination finishes an attached child or presented flow; an application root retains its initial destination.
 - `finish()` has no effect on the application root or on a detached coordinator.
-- `set(stack:)` accepts only destination values and installs changed routes as pushed destinations. Use `sheet`, `overlay`, `fullScreen`, or `present` to add a presented route.
+- `set(stack:)` installs a complete non-empty stack as pushed destinations. Use `sheet`, `overlay`, `fullScreen`, or `present` to add a presented route.
 - Alerts, tabs, window/root switching, and deep-link parsing are outside this package's scope. Convert their results into coordinator stack operations.
 
 ## Demo and further reading

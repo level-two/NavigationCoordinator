@@ -1,4 +1,5 @@
 enum DemoDestination: Equatable {
+    case home
     case details(number: Int)
     case legacy
     case nestedFlow

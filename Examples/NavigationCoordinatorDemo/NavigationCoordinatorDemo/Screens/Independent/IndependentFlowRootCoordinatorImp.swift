@@ -7,15 +7,13 @@ final class IndependentFlowRootCoordinatorImp: NavigationRootController<Independ
 
     init(style: IndependentFlowStyle) {
         self.style = style
-        super.init(areEquivalent: ==)
-    }
-
-    override func landingView() -> any DestinationView {
-        IndependentLandingView(coordinator: self, style: style)
+        super.init(initial: .start, areEquivalent: ==)
     }
 
     override func destinationView(for destination: IndependentDestination) -> any DestinationView {
         switch destination {
+        case .start:
+            IndependentStartView(coordinator: self, style: style)
         case .info(let title):
             IndependentInfoView(title: title, coordinator: self, style: style)
         case .legacy:
@@ -32,8 +30,10 @@ final class IndependentFlowRootCoordinatorImp: NavigationRootController<Independ
         case .info, .legacy, .review:
             push(destination)
         case .installInfoAndReview:
-            set(stack: [.info(title: "Installed route"), .review])
+            set(stack: [.start, .info(title: "Installed route"), .review])
         case .reset:
+            popToRoot()
+        case .start:
             popToRoot()
         }
     }

@@ -10,8 +10,8 @@ struct CheckoutStepView: View, DestinationView {
         case .address: "Address"
         case .payment: "Payment"
         case .confirmation: "Confirmation"
-        case .restart:
-            fatalError("Restart is a navigation action, not a screen destination.")
+        case .start, .restart:
+            fatalError("This destination is not a checkout step.")
         }
     }
 
@@ -33,7 +33,7 @@ struct CheckoutStepView: View, DestinationView {
             case .confirmation:
                 Button("Restart child flow") { coordinator.show(destination: .restart) }
                     .buttonStyle(.borderedProminent)
-            case .restart:
+            case .start, .restart:
                 EmptyView()
             }
         }

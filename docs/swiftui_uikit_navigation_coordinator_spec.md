@@ -1,6 +1,6 @@
 # SwiftUI + UIKit Navigation Coordinator Specification
 
-**Revision:** 6
+**Revision:** 7
 **Implementation status:** Application slice implemented
 
 ## Revision Notes
@@ -19,14 +19,16 @@ This revision makes the runtime contract explicit:
 - During an animated transition, mutations update logical state immediately and
   coalesce into one pending reconciliation. Only the latest resulting tree matters.
 - A confirmed UIKit-originated pop is converted to a retained physical prefix and
-  truncates the deepest affected owner first. Popping a child landing screen removes
-  the child destination from its parent.
+  truncates the deepest affected owner first. Popping a child's initial
+  destination removes the child destination from its parent.
 - Initial installation is silent. Later reconciliations follow the visual action
   rules in section 10.
 - Public stack mutations are idempotent when the requested stack equals the current
   stack.
+- Active stacks are non-empty. Each coordinator is initialized with an explicit
+  first destination rather than an implicit landing view.
 - A child coordinator may finish its flow by removing the parent destination that
-  owns it. This pops the child's landing screen, its entire substack, and any routes
+  owns it. This pops the child's entire substack and any routes
   above it in the flattened UIKit stack.
 - Sheet, overlay, and full-screen presentation destinations are appended to the
   coordinator's typed stack. The runtime retains their presentation style and
@@ -86,10 +88,10 @@ Example logical hierarchy:
 
 ```text
 AppRoot
-  landing
+  home
   puzzleList
   printFlow
-    landing
+    start
     printerSelection
     printProgress
 ```
@@ -100,7 +102,7 @@ Flattened UIKit stack:
 [
   HomeHostingController,
   PuzzleListHostingController,
-  PrintFlowLandingHostingController,
+  PrintFlowStartHostingController,
   PrinterSelectionHostingController,
   PrintProgressHostingController
 ]
@@ -117,7 +119,7 @@ A `UINavigationController` subclass that owns the one physical navigation stack.
 Responsibilities:
 
 - Act as the physical `UINavigationController`.
-- Provide root landing view and root destination views.
+- Provide root destination views, including an explicit initial destination.
 - Expose navigation controls similar to `NavigationCoordinator`.
 - Own `NavigationRuntime`.
 - Reconcile logical navigation state with UIKit's physical stack.
@@ -132,8 +134,8 @@ Important:
 - It is not a `UIViewController`.
 - It is not a SwiftUI `View`.
 - It is not UIKit's `UINavigationController`.
-- It owns a typed `[Destination]` substack.
-- It provides builder methods for its landing view and destination views.
+- It owns a non-empty typed `[Destination]` substack while active.
+- It provides a destination builder for every route, including its initial route.
 - It can be returned as a `DestinationView` from another coordinator and will be treated as a child subflow.
 
 ### Destination
@@ -295,15 +297,12 @@ open class NavigationCoordinator<Destination>: DestinationView {
     private let areEquivalent: (Destination, Destination) -> Bool
 
     public init(
-        initialStack: [Destination] = [],
+        initial: Destination,
+        rest: [Destination] = [],
         areEquivalent: @escaping (Destination, Destination) -> Bool
     ) {
-        self.stack = initialStack
+        self.stack = [initial] + rest
         self.areEquivalent = areEquivalent
-    }
-
-    open func landingView() -> any DestinationView {
-        fatalError("Subclasses must override landingView()")
     }
 
     open func destinationView(for destination: Destination) -> any DestinationView {
@@ -311,7 +310,7 @@ open class NavigationCoordinator<Destination>: DestinationView {
     }
 
     public func makeViewController(context: NavigationBuildContext) -> UIViewController {
-        context.attachSubflow(self)
+        context.attach(self)
     }
 
     public func push(_ destination: Destination) {
@@ -319,40 +318,40 @@ open class NavigationCoordinator<Destination>: DestinationView {
     }
 
     public func pop() {
-        guard !stack.isEmpty else { return }
+        guard stack.count > 1 else {
+            finish()
+            return
+        }
         set(stack: Array(stack.dropLast()))
     }
 
     public func popToRoot() {
-        set(stack: [])
+        set(stack: Array(stack.prefix(1)))
     }
 
-    /// Removes this entire child flow, including its landing view.
+    /// Removes this entire child flow.
     public func finish() {
         // Ask the runtime to remove this coordinator's owning parent destination.
     }
 
     public func replaceTop(with destination: Destination) {
-        guard !stack.isEmpty else {
-            set(stack: [destination])
-            return
-        }
-
         set(stack: Array(stack.dropLast()) + [destination])
     }
 
     public func set(stack newStack: [Destination]) {
+        guard !newStack.isEmpty else {
+            // Finish if attached; otherwise emit a debug warning and retain stack.
+            return
+        }
         stack = newStack
         // Notify attached runtime if attached.
-        // If unattached, store as pending initial state.
+        // If unattached, store the prepared non-empty state.
     }
 }
 
-public extension NavigationCoordinator where Destination: Equatable {
-    convenience init(initialStack: [Destination] = []) {
-        self.init(initialStack: initialStack, areEquivalent: ==)
-    }
-}
+// The base class also supplies:
+// public init(initial: Destination, rest: [Destination] = [])
+//     where Destination: Equatable
 ```
 
 ### 5.5 NavigationRootController
@@ -372,10 +371,11 @@ open class NavigationRootController<Destination>: UINavigationController {
     private var runtime: NavigationRuntime?
 
     public init(
-        initialStack: [Destination] = [],
+        initial: Destination,
+        rest: [Destination] = [],
         areEquivalent: @escaping (Destination, Destination) -> Bool
     ) {
-        self.stack = initialStack
+        self.stack = [initial] + rest
         self.areEquivalent = areEquivalent
         super.init(nibName: nil, bundle: nil)
     }
@@ -383,10 +383,6 @@ open class NavigationRootController<Destination>: UINavigationController {
     @available(*, unavailable)
     public required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    open func landingView() -> any DestinationView {
-        fatalError("Subclasses must override landingView()")
     }
 
     open func destinationView(for destination: Destination) -> any DestinationView {
@@ -398,12 +394,15 @@ open class NavigationRootController<Destination>: UINavigationController {
     }
 
     public func pop() {
-        guard !stack.isEmpty else { return }
+        guard stack.count > 1 else {
+            // Finish if presented; retain the destination on an application root.
+            return
+        }
         set(stack: Array(stack.dropLast()))
     }
 
     public func popToRoot() {
-        set(stack: [])
+        set(stack: Array(stack.prefix(1)))
     }
 
     public func finish() {
@@ -411,11 +410,6 @@ open class NavigationRootController<Destination>: UINavigationController {
     }
 
     public func replaceTop(with destination: Destination) {
-        guard !stack.isEmpty else {
-            set(stack: [destination])
-            return
-        }
-
         set(stack: Array(stack.dropLast()) + [destination])
     }
 
@@ -436,16 +430,18 @@ open class NavigationRootController<Destination>: UINavigationController {
     }
 
     public func set(stack newStack: [Destination]) {
+        guard !newStack.isEmpty else {
+            // Finish if presented; otherwise warn and retain the application root.
+            return
+        }
         stack = newStack
         // Ask runtime to reconcile.
     }
 }
 
-public extension NavigationRootController where Destination: Equatable {
-    convenience init(initialStack: [Destination] = []) {
-        self.init(initialStack: initialStack, areEquivalent: ==)
-    }
-}
+// The base class also supplies:
+// public init(initial: Destination, rest: [Destination] = [])
+//     where Destination: Equatable
 ```
 
 ### 5.6 Feature-Facing Coordinator Protocols
@@ -468,6 +464,7 @@ protocol ProfileCoordinating: AnyObject {
 }
 
 private enum ProfileRoute: Equatable {
+    case home
     case account(UUID)
     case privacy
 }
@@ -477,16 +474,13 @@ final class ProfileCoordinator:
     NavigationCoordinator<ProfileRoute>,
     ProfileCoordinating
 {
-    init(initialStack: [ProfileRoute] = []) {
-        super.init(initialStack: initialStack, areEquivalent: ==)
-    }
-
-    override func landingView() -> any DestinationView {
-        ProfileHomeView(coordinator: self)
+    init(restoredPath: [ProfileRoute] = []) {
+        super.init(initial: .home, rest: restoredPath, areEquivalent: ==)
     }
 
     override func destinationView(for route: ProfileRoute) -> any DestinationView {
         switch route {
+        case .home: ProfileHomeView(coordinator: self)
         case .account(let id): AccountView(id: id, coordinator: self)
         case .privacy: PrivacyView(coordinator: self)
         }
@@ -530,21 +524,21 @@ final class Feature1NavigationCoordinator:
     Feature1FlowCoordinator
 {
     enum Destination: Equatable {
+        case root
         case details(id: Int)
         case legacy
         case checkout
     }
 
-    init(initialStack: [Destination] = []) {
-        super.init(initialStack: initialStack, areEquivalent: ==)
-    }
-
-    override func landingView() -> any DestinationView {
-        Feature1RootView(coordinator: self)
+    init(restoredPath: [Destination] = []) {
+        super.init(initial: .root, rest: restoredPath, areEquivalent: ==)
     }
 
     override func destinationView(for destination: Destination) -> any DestinationView {
         switch destination {
+        case .root:
+            Feature1RootView(coordinator: self)
+
         case .details(let id):
             DetailsView(id: id, coordinator: self)
 
@@ -552,7 +546,7 @@ final class Feature1NavigationCoordinator:
             LegacyViewController()
 
         case .checkout:
-            CheckoutNavigationCoordinator()
+            CheckoutNavigationCoordinator(initial: .start)
         }
     }
 
@@ -582,22 +576,22 @@ final class AppNavigationRootController:
     NavigationRootController<AppNavigationRootController.Destination>
 {
     enum Destination: Equatable {
+        case home
         case puzzleList
         case puzzleDetails(id: UUID)
         case printerSettings
         case printFlow
     }
 
-    init(initialStack: [Destination] = []) {
-        super.init(initialStack: initialStack, areEquivalent: ==)
-    }
-
-    override func landingView() -> any DestinationView {
-        HomeView(coordinator: self)
+    init(restoredPath: [Destination] = []) {
+        super.init(initial: .home, rest: restoredPath, areEquivalent: ==)
     }
 
     override func destinationView(for destination: Destination) -> any DestinationView {
         switch destination {
+        case .home:
+            HomeView(coordinator: self)
+
         case .puzzleList:
             PuzzleListView(coordinator: self)
 
@@ -608,7 +602,7 @@ final class AppNavigationRootController:
             PrinterSettingsView(coordinator: self)
 
         case .printFlow:
-            PrintFlowNavigationCoordinator()
+            PrintFlowNavigationCoordinator(initial: .start)
         }
     }
 }
@@ -637,22 +631,21 @@ or other independently owned navigation tree.
 
 ## 7. Stack Semantics
 
-### 7.1 Landing View
+### 7.1 Non-Empty Destination Stack
 
-Each `NavigationCoordinator` has an implicit landing view.
-
-A coordinator's public `stack` contains only destinations above that landing view.
+Each coordinator is initialized with an explicit first destination. Its public
+`stack` contains that root destination and every destination above it.
 
 Example:
 
 ```swift
-coordinator.stack = [.details(id: 1), .settings]
+coordinator.stack = [.home, .details(id: 1), .settings]
 ```
 
 Logical segment:
 
 ```text
-landing
+home
   details(id: 1)
   settings
 ```
@@ -661,7 +654,7 @@ Physical controllers:
 
 ```text
 [
-  LandingHostingController,
+  HomeHostingController,
   DetailsHostingController,
   SettingsHostingController
 ]
@@ -691,10 +684,10 @@ itself is unconstrained.
 For an `Equatable` destination, pass `==`:
 
 ```swift
-super.init(initialStack: initialStack, areEquivalent: ==)
+super.init(initial: .home, rest: restoredPath, areEquivalent: ==)
 ```
 
-The base types also provide this policy through a constrained convenience
+The base types also provide this policy through a constrained designated
 initializer when `Destination: Equatable`.
 
 For an unconstrained destination, compare the route discriminator and every
@@ -702,6 +695,8 @@ payload value that changes the content built by `destinationView(for:)`:
 
 ```swift
 super.init(
+    initial: initial,
+    rest: restoredPath,
     areEquivalent: { lhs, rhs in
         lhs.screenID == rhs.screenID && lhs.revision == rhs.revision
     }
@@ -803,6 +798,7 @@ The child owns its own internal destination enum:
 
 ```swift
 enum CheckoutDestination: Equatable {
+    case start
     case address
     case payment
     case summary
@@ -813,18 +809,23 @@ If a parent needs to initialize a child with a predefined stack, pass that as ch
 
 ```swift
 enum ParentDestination: Equatable {
-    case checkout(initialStack: [CheckoutDestination])
+    case checkout(
+        initial: CheckoutDestination,
+        rest: [CheckoutDestination]
+    )
 }
 ```
 
 Then:
 
 ```swift
-case .checkout(let initialStack):
-    CheckoutNavigationCoordinator(initialStack: initialStack)
+case .checkout(let initial, let rest):
+    CheckoutNavigationCoordinator(initial: initial, rest: rest)
 ```
 
-Avoid making parents directly mutate child stacks after creation unless there is a specific integration reason.
+Keeping the first destination separate makes an empty child stack impossible.
+Avoid making parents directly mutate child stacks after creation unless there is
+a specific integration reason.
 
 ---
 
@@ -1152,9 +1153,9 @@ Logical hierarchy:
 
 ```text
 Parent
-  landing
+  home
   childFlow
-    landing
+    start
     X
     Y
 ```
@@ -1162,7 +1163,7 @@ Parent
 Flattened stack:
 
 ```text
-[ParentLanding, ChildLanding, X, Y]
+[ParentHome, ChildStart, X, Y]
 ```
 
 User swipes back from `Y` to `X`.
@@ -1170,20 +1171,20 @@ User swipes back from `Y` to `X`.
 Runtime updates child stack:
 
 ```swift
-child.stack = [.x]
+child.stack = [.start, .x]
 ```
 
 Parent stack remains unchanged.
 
-### Example: Popping Child Landing
+### Example: Popping Child Initial Destination
 
 Flattened stack:
 
 ```text
-[ParentLanding, ChildLanding]
+[ParentHome, ChildStart]
 ```
 
-User swipes back from `ChildLanding` to `ParentLanding`.
+User swipes back from `ChildStart` to `ParentHome`.
 
 Runtime removes the child-flow destination from the parent stack.
 
@@ -1247,8 +1248,8 @@ created -> unattached -> attached -> active -> detached
 
 Before attachment:
 
-- It may accept an `initialStack`.
-- It may store local stack state.
+- It accepts an explicit initial destination and may accept a restored remainder.
+- It may store prepared non-empty stack state.
 - It should not attempt to mutate a physical UIKit stack.
 
 After attachment:
@@ -1459,10 +1460,9 @@ user-driven pop mapping
 
 The system provides a UIKit-backed, declarative, hierarchical navigation architecture.
 
-A `NavigationRootController` is the one physical `UINavigationController`. Feature flows are implemented as typed `NavigationCoordinator<Destination>` subclasses. Each coordinator owns an unconstrained typed destination stack, supplies an `areEquivalent` policy, and provides two builders:
+A `NavigationRootController` is the one physical `UINavigationController`. Feature flows are implemented as typed `NavigationCoordinator<Destination>` subclasses. Each coordinator owns an unconstrained, non-empty typed destination stack while active, supplies an `areEquivalent` policy, and provides one builder:
 
 ```swift
-landingView() -> any DestinationView
 destinationView(for:) -> any DestinationView
 ```
 

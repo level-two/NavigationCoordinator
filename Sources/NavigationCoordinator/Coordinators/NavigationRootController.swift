@@ -10,24 +10,29 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
     private weak var parentRuntime: NavigationRuntime?
     private weak var parentEntry: NavigationEntry?
 
-    /// Creates a navigation root with feature-defined destination equivalence.
+    /// Creates a navigation root with an explicit initial destination and
+    /// feature-defined destination equivalence.
     ///
     /// Equivalent destinations at the same stack position reuse their existing
     /// view controller or child coordinator. The closure must define an
     /// equivalence relation and include every value that changes built content.
     public init(
-        initialStack: [Destination] = [],
+        initial: Destination,
+        rest: [Destination] = [],
         areEquivalent: @escaping (Destination, Destination) -> Bool
     ) {
-        stack = initialStack
-        presentationStyles = Array(repeating: nil, count: initialStack.count)
+        stack = [initial] + rest
+        presentationStyles = Array(repeating: nil, count: stack.count)
         self.areEquivalent = areEquivalent
         super.init(nibName: nil, bundle: nil)
     }
 
-    public init(initialStack: [Destination] = []) where Destination: Equatable {
-        stack = initialStack
-        presentationStyles = Array(repeating: nil, count: initialStack.count)
+    public init(
+        initial: Destination,
+        rest: [Destination] = []
+    ) where Destination: Equatable {
+        stack = [initial] + rest
+        presentationStyles = Array(repeating: nil, count: stack.count)
         areEquivalent = { $0 == $1 }
         super.init(nibName: nil, bundle: nil)
     }
@@ -35,10 +40,6 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
     @available(*, unavailable)
     public required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
-    }
-
-    open func landingView() -> any DestinationView {
-        fatalError("Subclasses must override landingView()")
     }
 
     open func destinationView(for destination: Destination) -> any DestinationView {
@@ -73,14 +74,24 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
         append(destination, presentationStyle: nil, animated: animated)
     }
 
+    /// Removes the top destination.
+    ///
+    /// When only the initial destination remains, a presented root finishes its
+    /// flow. An application or detached root retains its initial destination.
     public final func pop(animated: Bool = true) {
-        guard !stack.isEmpty else { return }
+        guard stack.count > 1 else {
+            if parentEntry != nil {
+                finish(animated: animated)
+            }
+            return
+        }
         truncateStack(to: stack.count - 1)
         runtime?.ownerDidChange(animated: animated)
     }
 
+    /// Retains only this navigation root's initial destination.
     public final func popToRoot(animated: Bool = true) {
-        set(stack: [], animated: animated)
+        set(stack: Array(stack.prefix(1)), animated: animated)
     }
 
     /// Removes this presented navigation tree from its parent coordinator's stack.
@@ -91,10 +102,9 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
     }
 
     public final func replaceTop(with destination: Destination, animated: Bool = true) {
-        if !stack.isEmpty {
-            truncateStack(to: stack.count - 1)
-        }
-        append(destination, presentationStyle: nil, animated: animated)
+        stack[stack.count - 1] = destination
+        presentationStyles[presentationStyles.count - 1] = nil
+        runtime?.ownerDidChange(animated: animated)
     }
 
     public final func sheet(_ destination: Destination, animated: Bool = true) {
@@ -117,7 +127,19 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
         append(destination, presentationStyle: style, animated: animated)
     }
 
+    /// Installs a complete non-empty pushed stack.
+    ///
+    /// An empty stack request finishes a presented flow. An application or
+    /// detached root emits a debug warning and retains its current stack.
     public final func set(stack newStack: [Destination], animated: Bool = true) {
+        guard !newStack.isEmpty else {
+            if parentEntry != nil {
+                finish(animated: animated)
+            } else {
+                debugWarning("Ignoring an empty stack on an application or detached navigation root.")
+            }
+            return
+        }
         guard !stacksAreEquivalent(stack, newStack) else { return }
         stack = newStack
         presentationStyles = Array(repeating: nil, count: newStack.count)
@@ -136,15 +158,12 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
         }
     }
 
-    func makeLanding() -> any DestinationView {
-        landingView()
-    }
-
     func makeDestination(at index: Int) -> any DestinationView {
         destinationView(for: stack[index])
     }
 
     func truncateStack(to count: Int) {
+        precondition(count > 0, "An active navigation root cannot have an empty stack.")
         stack = Array(stack.prefix(count))
         presentationStyles = Array(presentationStyles.prefix(count))
     }
@@ -201,5 +220,11 @@ open class NavigationRootController<Destination>: UINavigationController, Naviga
         lhs.count == rhs.count && zip(lhs, rhs).allSatisfy {
             areEquivalent($0.0, $0.1)
         }
+    }
+
+    private func debugWarning(_ message: @autoclosure () -> String) {
+#if DEBUG
+        print("[NavigationCoordinator] \(message())")
+#endif
     }
 }

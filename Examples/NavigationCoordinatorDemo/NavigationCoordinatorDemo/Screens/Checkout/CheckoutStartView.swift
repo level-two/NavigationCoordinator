@@ -1,7 +1,7 @@
 import NavigationCoordinator
 import SwiftUI
 
-struct CheckoutLandingView: View, DestinationView {
+struct CheckoutStartView: View, DestinationView {
     let coordinator: any CheckoutCoordinator
 
     var body: some View {
